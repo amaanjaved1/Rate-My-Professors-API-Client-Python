@@ -5,12 +5,12 @@ build-backend = "hatchling.build"
 [project]
 name = "ratemyprofessors-client"
 version = "0.1.0"
-description = "Typed, retrying, rate-limited unofficial client for RateMyProfessors."
+description = "A Python API Client for RateMyProfessors."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [
-  { name = "Amaan", email = "you@example.com" },
+  { name = "Amaan", email = "amaanjaved2004@gmail.com" },
 ]
 keywords = ["ratemyprofessors", "api-client", "scraping", "ratings"]
 classifiers = [
@@ -44,8 +44,7 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/yourname/ratemyprofessors-client"
-Repository = "https://github.com/yourname/ratemyprofessors-client"
+Repository = "https://github.com/amaanjaved1/Rate-My-Professors-API-Client-Python"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/rmp_client"]

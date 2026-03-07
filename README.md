@@ -4,6 +4,8 @@ Typed, retrying, rate-limited unofficial client for RateMyProfessors, with optio
 helpers for ingestion workflows (sentiment, dedupe, course-code normalization).
 
 > Note: This library is **unofficial** and may break if RMP changes their internal API.
+> This library has been made open-source so that if/when there are any changes,
+> someone is able to take note of these changes and help to contribute an update.
 
 ## Installation
 
