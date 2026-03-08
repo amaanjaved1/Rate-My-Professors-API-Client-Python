@@ -29,12 +29,10 @@ classifiers = [
 dependencies = [
   "httpx>=0.27.0",
   "pydantic>=2.7.0",
+  "textblob>=0.18.0",
 ]
 
 [project.optional-dependencies]
-sentiment = [
-  "textblob>=0.18.0",
-]
 dev = [
   "pytest",
   "pytest-httpx",

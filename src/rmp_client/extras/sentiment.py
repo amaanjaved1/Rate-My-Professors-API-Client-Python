@@ -19,14 +19,10 @@ class SentimentResult:
 
 
 def analyze_sentiment(text: str) -> SentimentResult:
-    """Return a simple sentiment score/label for the given text.
-
-    Requires the optional `sentiment` extra to be installed.
-    """
+    """Return a simple sentiment score/label for the given text."""
     if TextBlob is None:
         raise RuntimeError(
-            "textblob is not installed. Install the sentiment extra, e.g. "
-            "`pip install ratemyprofessors-client[sentiment]`.",
+            "textblob is not installed. Install with: pip install textblob",
         )
 
     blob = TextBlob(text)

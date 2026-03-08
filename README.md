@@ -1,6 +1,6 @@
 # RateMyProfessors API Client
 
-Typed, retrying, rate-limited unofficial client for RateMyProfessors, with optional
+Typed, retrying, rate-limited unofficial client for RateMyProfessors, with built-in
 helpers for ingestion workflows (sentiment, dedupe, course-code normalization).
 
 > Note: This library is **unofficial** and may break if RMP changes their internal API.
@@ -11,12 +11,6 @@ helpers for ingestion workflows (sentiment, dedupe, course-code normalization).
 
 ```bash
 pip install ratemyprofessors-client
-```
-
-With optional sentiment extras (TextBlob):
-
-```bash
-pip install 'ratemyprofessors-client[sentiment]'
 ```
 
 ## Quickstart
@@ -72,6 +66,7 @@ with RMPClient() as client:
         print(rating.date, rating.quality, rating.comment)
 ```
 
+<<<<<<< Updated upstream
 **Verify the client** (run the script to hit the live site and print sample data):
 
 ```bash
@@ -278,16 +273,28 @@ flowchart LR
 ```
 
 ## Extras
+=======
+## Helpers
+>>>>>>> Stashed changes
 
-Optional helpers live under `rmp_client.extras`:
+The package includes helpers for ingestion pipelines; import them from the main module:
 
-- `rmp_client.extras.sentiment.analyze_sentiment`
-- `rmp_client.extras.dedupe.normalize_comment` / `is_valid_comment`
-- `rmp_client.extras.course_codes.build_course_mapping`
+```python
+from rmp_client import (
+    RMPClient,
+    analyze_sentiment,   # sentiment score/label (uses TextBlob)
+    normalize_comment,
+    is_valid_comment,
+    build_course_mapping,
+    clean_course_label,
+)
+```
 
-See `docs/` and `examples/` for more. This repo also includes an
-`examples/ingest_supabase.py` script that mirrors a Supabase-centric
-scraping pipeline using this client.
+- **Sentiment:** `analyze_sentiment(text)` returns a score and label (e.g. positive, neutral).
+- **Dedupe:** `normalize_comment(text)` and `is_valid_comment(text, min_len=10)` for filtering/normalizing comments.
+- **Course codes:** `clean_course_label(raw)` and `build_course_mapping(scraped_labels, valid_courses)` for mapping RMP course strings to your catalog.
+
+See `docs/` and `examples/` for more. The repo includes `examples/ingest_supabase.py` for a Supabase-backed scraping pipeline.
 
 ## Publishing to PyPI
 

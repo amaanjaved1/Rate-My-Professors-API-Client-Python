@@ -10,10 +10,13 @@ from __future__ import annotations
 from datetime import date
 from typing import Iterable, Mapping
 
-from rmp_client import RMPClient
-from rmp_client.extras.course_codes import build_course_mapping
-from rmp_client.extras.dedupe import is_valid_comment, normalize_comment
-from rmp_client.extras.sentiment import analyze_sentiment
+from rmp_client import (
+    RMPClient,
+    analyze_sentiment,
+    build_course_mapping,
+    is_valid_comment,
+    normalize_comment,
+)
 
 
 SCHOOL_ID = 1466
