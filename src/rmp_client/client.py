@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+import base64
 import json
 from datetime import date
 from typing import Any, Dict, Iterable, Iterator, List, Mapping, Optional
+from urllib.parse import quote
 
 from .config import RMPClientConfig
 from .errors import ParsingError
 from .http import HttpClient, HttpClientContext
 from .models import (
+    CompareSchoolsResult,
     Professor,
     ProfessorRatingsPage,
     ProfessorSearchResult,
@@ -23,17 +26,134 @@ from .relay_store import (
     get_all_rating_records,
     get_all_school_rating_records,
     get_professor_node,
+    get_professor_ratings_connection_page_info,
     get_ratings_from_store,
     get_school_node,
+    get_school_ratings_connection_page_info,
     get_school_ratings_from_store,
+    get_school_search_connection,
+    get_school_search_page_info,
+    get_school_search_result_count,
+    get_teacher_search_connection,
+    get_teacher_search_page_info,
+    get_teacher_search_result_count,
+    _edges_to_school_records,
+    _edges_to_teacher_records,
     _is_record_ref,
     _resolve_ref,
     _resolve_refs,
 )
 
+# GraphQL query for teacher ratings with cursor-based pagination (RMP uses Relay).
+# Node id must be base64("Teacher-{legacyId}").
+TEACHER_RATINGS_QUERY = """
+query TeacherRatings($id: ID!, $first: Int!, $after: String) {
+  node(id: $id) {
+    ... on Teacher {
+      id
+      legacyId
+      firstName
+      lastName
+      department
+      avgRating
+      avgDifficulty
+      numRatings
+      wouldTakeAgainPercent
+      school {
+        id
+        name
+        city
+        state
+      }
+      ratings(first: $first, after: $after) {
+        edges {
+          node {
+            comment
+            ratingTags
+            clarityRating
+            difficultyRating
+            date
+            grade
+            helpfulRating
+            thumbsUpTotal
+            thumbsDownTotal
+            class
+            attendanceMandatory
+            textbookUse
+            isForCredit
+          }
+        }
+        pageInfo {
+          hasNextPage
+          endCursor
+        }
+      }
+    }
+  }
+}
+"""
+
+
+def _teacher_node_id(professor_id: str) -> str:
+    """Relay global id for Teacher node: base64('Teacher-{legacyId}')."""
+    raw = f"Teacher-{professor_id}"
+    return base64.b64encode(raw.encode("utf-8")).decode("ascii")
+
+
+def _school_node_id(school_id: str) -> str:
+    """Relay global id for School node: base64('School-{legacyId}')."""
+    raw = f"School-{school_id}"
+    return base64.b64encode(raw.encode("utf-8")).decode("ascii")
+
+
+# GraphQL query for school ratings with cursor-based pagination.
+SCHOOL_RATINGS_QUERY = """
+query SchoolRatings($id: ID!, $first: Int!, $after: String) {
+  node(id: $id) {
+    ... on School {
+      id
+      legacyId
+      name
+      city
+      state
+      avgRatingRounded
+      numRatings
+      ratings(first: $first, after: $after) {
+        edges {
+          node {
+            comment
+            date
+            reputationRating
+            locationRating
+            opportunitiesRating
+            facilitiesRating
+            internetRating
+            foodRating
+            clubsRating
+            socialRating
+            happinessRating
+            safetyRating
+            thumbsUpTotal
+            thumbsDownTotal
+          }
+        }
+        pageInfo {
+          hasNextPage
+          endCursor
+        }
+      }
+    }
+  }
+}
+"""
+
 
 def _format_location(record: Mapping[str, Any]) -> Optional[str]:
-    """Build a single location string from record (location, or city/state/country)."""
+    """Build the single location string for a record.
+
+    Uses record['location'] if present; otherwise joins city, state, country
+    from the API into one string.
+    """
     loc = record.get("location")
     if isinstance(loc, str) and loc.strip():
         return loc.strip()
@@ -47,7 +167,7 @@ def _format_location(record: Mapping[str, Any]) -> Optional[str]:
 
 
 def _school_record_to_location_dict(record: Mapping[str, Any]) -> Dict[str, Any]:
-    """Build a minimal school dict with id, name, location (string)."""
+    """Build a minimal school dict with id, name, and location."""
     return {
         "id": record.get("id") or record.get("__id"),
         "name": record.get("name") or "",
@@ -125,6 +245,20 @@ class RMPClient:
 
     # ---- School search ----------------------------------------------------------
 
+    def _search_schools_page_url(self, query: str) -> str:
+        """URL for school search page: /search/schools?q=..."""
+        base = self._config.search_schools_page_url.rstrip("/")
+        return f"{base}?q={quote(query, safe='')}"
+
+    def _fetch_relay_store_for_search_schools(self, query: str) -> Dict[str, Any]:
+        """GET school search page HTML and return parsed __RELAY_STORE__."""
+        url = self._search_schools_page_url(query)
+        html = self._client.get_html(url)
+        try:
+            return extract_relay_store(html)
+        except (ValueError, json.JSONDecodeError) as exc:
+            raise ParsingError(f"Failed to extract __RELAY_STORE__ from school search page: {exc}") from exc
+
     def search_schools(
         self,
         query: str,
@@ -134,48 +268,54 @@ class RMPClient:
     ) -> SchoolSearchResult:
         """Search schools by name.
 
-        NOTE: This uses a placeholder request body; you will need to adapt the
-        payload once we lock in the actual RMP JSON/GraphQL contract.
+        Loads the search page HTML (/search/schools?q=...) and parses
+        __RELAY_STORE__ for the first page of results. total and has_next_page
+        come from the relay; page_size is the number of results on that page.
         """
-        # Placeholder GraphQL-like payload; adjust as we learn the real API
-        variables: Dict[str, Any] = {
-            "query": query,
-            "page": page,
-            "pageSize": page_size,
-        }
-        payload = {"operationName": "SearchSchools", "variables": variables, "query": "..."}
-        data = self.raw_query(payload)
-
-        # For now, expect a shape like {"data": {"schools": {"edges": [...], "pageInfo": ...}}}
-        try:
-            schools_raw: Iterable[Mapping[str, Any]] = data["data"]["schools"]["edges"]
-        except Exception as exc:  # noqa: BLE001
-            raise ParsingError(f"Unexpected school search payload: {data!r}") from exc
-
-        schools: List[School] = []
-        for edge in schools_raw:
-            node = edge.get("node", {})
-            schools.append(
-                School(
-                    id=str(node.get("id")),
-                    name=node.get("name") or "",
-                    location=_format_location(node),
-                )
+        store = self._fetch_relay_store_for_search_schools(query)
+        conn = get_school_search_connection(store)
+        if conn is None:
+            return SchoolSearchResult(
+                schools=[],
+                total=None,
+                page=page,
+                page_size=page_size,
+                has_next_page=False,
+                next_cursor=None,
             )
-
-        page_info = data["data"]["schools"].get("pageInfo", {})
-        has_next = bool(page_info.get("hasNextPage", False))
-        total = data["data"]["schools"].get("totalCount")
-
+        school_records = _edges_to_school_records(store, conn.get("edges"))
+        schools: List[School] = []
+        for rec in school_records:
+            node = self._relay_school_to_node(store, rec)
+            schools.append(self._parse_school_node(node))
+        total = get_school_search_result_count(conn)
+        page_info = get_school_search_page_info(store, conn)
+        has_next = bool(page_info.get("hasNextPage", False)) if page_info else False
+        next_cursor = page_info.get("endCursor") if page_info else None
         return SchoolSearchResult(
             schools=schools,
             total=total,
             page=page,
-            page_size=page_size,
+            page_size=len(schools),
             has_next_page=has_next,
+            next_cursor=next_cursor,
         )
 
     # ---- Professor search / listing --------------------------------------------
+
+    def _search_professors_page_url(self, query: str) -> str:
+        """URL for professor search page: /search/professors/?q=..."""
+        base = self._config.search_professors_page_url.rstrip("/")
+        return f"{base}?q={quote(query, safe='')}"
+
+    def _fetch_relay_store_for_search_professors(self, query: str) -> Dict[str, Any]:
+        """GET professor search page HTML and return parsed __RELAY_STORE__."""
+        url = self._search_professors_page_url(query)
+        html = self._client.get_html(url)
+        try:
+            return extract_relay_store(html)
+        except (ValueError, json.JSONDecodeError) as exc:
+            raise ParsingError(f"Failed to extract __RELAY_STORE__ from search page: {exc}") from exc
 
     def search_professors(
         self,
@@ -185,39 +325,41 @@ class RMPClient:
         page: int = 1,
         page_size: int = 20,
     ) -> ProfessorSearchResult:
-        """Search professors by name and optional school.
+        """Search professors by name (and optional school filter).
 
-        This is the general-purpose search entry point. For your use-case of
-        scraping all professors at a school, use `list_professors_for_school`
-        or `iter_professors_for_school`.
+        Loads the search page HTML (/search/professors/?q=...) and parses
+        __RELAY_STORE__ for the first page of results. total and has_next_page
+        come from the relay; page_size is the number of results on that page.
+        For listing all professors at a school, use list_professors_for_school
+        or iter_professors_for_school.
         """
-        variables: Dict[str, Any] = {
-            "query": query,
-            "page": page,
-            "pageSize": page_size,
-        }
-        if school_id is not None:
-            variables["schoolId"] = school_id
-
-        payload = {"operationName": "SearchProfessors", "variables": variables, "query": "..."}
-        data = self.raw_query(payload)
-
-        try:
-            prof_edges: Iterable[Mapping[str, Any]] = data["data"]["professors"]["edges"]
-        except Exception as exc:  # noqa: BLE001
-            raise ParsingError(f"Unexpected professor search payload: {data!r}") from exc
-
-        professors = [self._parse_professor_edge(edge) for edge in prof_edges]
-        page_info = data["data"]["professors"].get("pageInfo", {})
-        has_next = bool(page_info.get("hasNextPage", False))
-        total = data["data"]["professors"].get("totalCount")
-
+        store = self._fetch_relay_store_for_search_professors(query)
+        conn = get_teacher_search_connection(store)
+        if conn is None:
+            return ProfessorSearchResult(
+                professors=[],
+                total=None,
+                page=page,
+                page_size=page_size,
+                has_next_page=False,
+                next_cursor=None,
+            )
+        teacher_records = _edges_to_teacher_records(store, conn.get("edges"))
+        professors: List[Professor] = []
+        for rec in teacher_records:
+            node = self._relay_professor_to_node(store, rec)
+            professors.append(self._parse_professor_node(node))
+        total = get_teacher_search_result_count(conn)
+        page_info = get_teacher_search_page_info(store, conn)
+        has_next = bool(page_info.get("hasNextPage", False)) if page_info else False
+        next_cursor = page_info.get("endCursor") if page_info else None
         return ProfessorSearchResult(
             professors=professors,
             total=total,
             page=page,
-            page_size=page_size,
+            page_size=len(professors),
             has_next_page=has_next,
+            next_cursor=next_cursor,
         )
 
     def list_professors_for_school(
@@ -350,6 +492,66 @@ class RMPClient:
         node = self._relay_professor_to_node(store, record)
         return self._parse_professor_node(node)
 
+    def _fetch_professor_ratings_via_graphql(
+        self,
+        professor_id: str,
+        *,
+        after: Optional[str] = None,
+        first: int = 20,
+    ) -> ProfessorRatingsPage:
+        """Fetch a page of professor ratings from the GraphQL API (for cursor-based next pages)."""
+        node_id = _teacher_node_id(professor_id)
+        variables: Dict[str, Any] = {"id": node_id, "first": first}
+        if after is not None:
+            variables["after"] = after
+        payload: Dict[str, Any] = {
+            "query": TEACHER_RATINGS_QUERY,
+            "variables": variables,
+        }
+        data = self.raw_query(payload)
+        node = (data.get("data") or {}).get("node")
+        if not node:
+            raise ParsingError("GraphQL response missing data.node (teacher not found or invalid id)")
+        # Build Professor from Teacher fragment
+        school_obj = node.get("school")
+        school: Optional[School] = None
+        if isinstance(school_obj, dict):
+            loc = _format_location(school_obj)
+            school = School(
+                id=str(school_obj.get("id") or ""),
+                name=str(school_obj.get("name") or ""),
+                location=loc,
+            )
+        name = " ".join(filter(None, [node.get("firstName"), node.get("lastName")])).strip()
+        professor = Professor(
+            id=str(node.get("legacyId") or node.get("id") or professor_id),
+            name=name or "Unknown",
+            department=node.get("department"),
+            school=school,
+            overall_rating=node.get("avgRating"),
+            num_ratings=node.get("numRatings"),
+            percent_take_again=node.get("wouldTakeAgainPercent"),
+            level_of_difficulty=node.get("avgDifficulty"),
+        )
+        ratings_conn = node.get("ratings") or {}
+        edges = ratings_conn.get("edges") or []
+        page_info = ratings_conn.get("pageInfo") or {}
+        ratings_models: List[Rating] = []
+        for edge in edges:
+            r = edge.get("node") if isinstance(edge, dict) else None
+            if not isinstance(r, dict):
+                continue
+            norm = self._relay_rating_to_node(r)
+            ratings_models.append(self._parse_rating_node(norm))
+        has_next = bool(page_info.get("hasNextPage", False))
+        next_cursor = page_info.get("endCursor") if page_info else None
+        return ProfessorRatingsPage(
+            professor=professor,
+            ratings=ratings_models,
+            has_next_page=has_next,
+            next_cursor=next_cursor,
+        )
+
     def get_professor_ratings_page(
         self,
         professor_id: str,
@@ -359,9 +561,17 @@ class RMPClient:
     ) -> ProfessorRatingsPage:
         """Fetch a single page of ratings/comments for a professor.
 
-        Data is loaded from the professor page HTML (server-side rendered).
-        Pagination is applied in-memory over the ratings embedded in the page.
+        First page is loaded from the professor page HTML. Subsequent pages are
+        fetched via the GraphQL API using the returned next_cursor, so you can
+        iterate all ratings with iter_professor_ratings or by calling this
+        repeatedly with cursor=page.next_cursor.
         """
+        # Relay cursor (from pageInfo.endCursor): use GraphQL for next page
+        if cursor is not None and not cursor.isdigit():
+            return self._fetch_professor_ratings_via_graphql(
+                professor_id, after=cursor, first=page_size
+            )
+        # First page or legacy numeric offset: from HTML
         store = self._fetch_relay_store_for_professor(professor_id)
         record = get_professor_node(store, professor_id)
         if record is None:
@@ -377,12 +587,22 @@ class RMPClient:
             node = self._relay_rating_to_node(r)
             ratings_models.append(self._parse_rating_node(node))
 
-        # In-page pagination: cursor as offset index (or None for first page)
-        start = int(cursor) if cursor is not None else 0
-        start = max(0, start)
-        page_slice = ratings_models[start : start + page_size]
-        has_next = (start + page_size) < len(ratings_models)
-        next_cursor = str(start + page_size) if has_next else None
+        page_info = get_professor_ratings_connection_page_info(store, record)
+        if cursor is not None and cursor.isdigit():
+            # Legacy: in-memory offset pagination over the single HTML batch
+            start = max(0, int(cursor))
+            page_slice = ratings_models[start : start + page_size]
+            has_next = (start + page_size) < len(ratings_models)
+            next_cursor = str(start + page_size) if has_next else None
+        else:
+            # First page: use Relay pageInfo when available so caller can fetch more via GraphQL; else in-memory
+            page_slice = ratings_models[:page_size]
+            if page_info and page_info.get("hasNextPage") and page_info.get("endCursor"):
+                has_next = True
+                next_cursor = page_info.get("endCursor")
+            else:
+                has_next = len(ratings_models) > page_size
+                next_cursor = str(page_size) if has_next else None
 
         return ProfessorRatingsPage(
             professor=professor,
@@ -424,6 +644,11 @@ class RMPClient:
         base = self._config.compare_schools_page_url.rstrip("/")
         return f"{base}/{school_id}"
 
+    def _compare_schools_page_url(self, school_id_1: str, school_id_2: str) -> str:
+        """URL for compare page: /compare/schools/id1/id2."""
+        base = self._config.compare_schools_page_url.rstrip("/")
+        return f"{base}/{school_id_1}/{school_id_2}"
+
     def _fetch_relay_store_for_school(self, school_id: str, *, use_compare_url: bool = False) -> Dict[str, Any]:
         """GET school page (or compare page) HTML and return parsed __RELAY_STORE__."""
         url = self._compare_school_page_url(school_id) if use_compare_url else self._school_page_url(school_id)
@@ -433,25 +658,55 @@ class RMPClient:
         except (ValueError, json.JSONDecodeError) as exc:
             raise ParsingError(f"Failed to extract __RELAY_STORE__ from school page: {exc}") from exc
 
-    def _relay_school_to_node(self, record: Mapping[str, Any]) -> Dict[str, Any]:
-        """Convert a Relay School record to the shape _parse_school_node expects."""
-        return {
+    def _fetch_relay_store_for_compare_schools(
+        self, school_id_1: str, school_id_2: str
+    ) -> Dict[str, Any]:
+        """GET compare schools page HTML and return parsed __RELAY_STORE__."""
+        url = self._compare_schools_page_url(school_id_1, school_id_2)
+        html = self._client.get_html(url)
+        try:
+            return extract_relay_store(html)
+        except (ValueError, json.JSONDecodeError) as exc:
+            raise ParsingError(f"Failed to extract __RELAY_STORE__ from compare schools page: {exc}") from exc
+
+    def _relay_school_to_node(self, store: Dict[str, Any], record: Mapping[str, Any]) -> Dict[str, Any]:
+        """Convert a Relay School record to the shape _parse_school_node expects.
+
+        RMP school page: overall from avgRatingRounded; category bars from summary __ref (SchoolSummary).
+        """
+        node: Dict[str, Any] = {
             "id": record.get("id") or record.get("__id") or record.get("legacyId"),
             "name": record.get("name") or "",
             "location": _format_location(record),
-            "overall_quality": record.get("overallQuality") or record.get("overall"),
+            "overall_quality": record.get("avgRatingRounded") or record.get("overallQuality") or record.get("overall"),
             "num_ratings": record.get("numRatings"),
             "reputation": record.get("reputation"),
             "safety": record.get("safety"),
             "happiness": record.get("happiness"),
             "facilities": record.get("facilities"),
             "social": record.get("social"),
-            "location_rating": record.get("location"),  # "Location" category score
+            "location_rating": record.get("location"),
             "clubs": record.get("clubs"),
             "opportunities": record.get("opportunities"),
             "internet": record.get("internet"),
             "food": record.get("food"),
         }
+        # RMP stores category bars in summary __ref (SchoolSummary): schoolReputation, schoolSafety, etc.
+        summary_ref = record.get("summary")
+        if _is_record_ref(summary_ref):
+            summary_record = _resolve_ref(store, summary_ref)
+            if isinstance(summary_record, dict):
+                node["reputation"] = node["reputation"] or _safe_float(summary_record.get("schoolReputation"))
+                node["safety"] = node["safety"] or _safe_float(summary_record.get("schoolSafety"))
+                node["happiness"] = node["happiness"] or _safe_float(summary_record.get("schoolSatisfaction"))
+                node["facilities"] = node["facilities"] or _safe_float(summary_record.get("campusCondition"))
+                node["social"] = node["social"] or _safe_float(summary_record.get("socialActivities"))
+                node["location_rating"] = node["location_rating"] or _safe_float(summary_record.get("campusLocation"))
+                node["clubs"] = node["clubs"] or _safe_float(summary_record.get("clubAndEventActivities"))
+                node["opportunities"] = node["opportunities"] or _safe_float(summary_record.get("careerOpportunities"))
+                node["internet"] = node["internet"] or _safe_float(summary_record.get("internetSpeed"))
+                node["food"] = node["food"] or _safe_float(summary_record.get("foodQuality"))
+        return node
 
     def _parse_school_node(self, node: Mapping[str, Any]) -> School:
         """Build School from a dict (relay or nested)."""
@@ -474,31 +729,54 @@ class RMPClient:
         )
 
     def _parse_school_rating_node(self, record: Mapping[str, Any]) -> SchoolRating:
+        # RMP sends "2026-03-05 16:00:35 +0000 UTC"; use date part only.
         date_str = record.get("date")
+        if isinstance(date_str, str) and " " in date_str:
+            date_str = date_str.split(" ")[0]
         try:
             rating_date = date.fromisoformat(date_str) if isinstance(date_str, str) else date.today()
         except ValueError:
             rating_date = date.today()
-        overall = _safe_float(
-            record.get("overall") or record.get("overallQuality") or record.get("quality")
-        )
-        # Build category_ratings dict from bar ratings (out of 5)
-        category_keys = (
-            "reputation", "location", "opportunities", "facilities", "internet",
-            "food", "clubs", "social", "happiness", "safety",
+        # RMP SchoolRating: reputationRating, locationRating, opportunitiesRating, facilitiesRating,
+        # internetRating, foodRating, clubsRating, socialRating, happinessRating, safetyRating
+        rmp_to_category = (
+            ("reputationRating", "reputation"),
+            ("locationRating", "location"),
+            ("opportunitiesRating", "opportunities"),
+            ("facilitiesRating", "facilities"),
+            ("internetRating", "internet"),
+            ("foodRating", "food"),
+            ("clubsRating", "clubs"),
+            ("socialRating", "social"),
+            ("happinessRating", "happiness"),
+            ("safetyRating", "safety"),
         )
         category_ratings: Optional[Dict[str, float]] = None
-        for key in category_keys:
-            val = record.get(key) or record.get(key.replace("_", ""))
+        for rmp_key, cat_key in rmp_to_category:
+            val = record.get(rmp_key)
             if val is not None:
                 f = _safe_float(val)
                 if f is not None:
                     if category_ratings is None:
                         category_ratings = {}
-                    category_ratings[key] = f
+                    category_ratings[cat_key] = f
+        if category_ratings is None:
+            for key in ("reputation", "location", "opportunities", "facilities", "internet", "food", "clubs", "social", "happiness", "safety"):
+                val = record.get(key) or record.get(key.replace("_", ""))
+                if val is not None:
+                    f = _safe_float(val)
+                    if f is not None:
+                        if category_ratings is None:
+                            category_ratings = {}
+                        category_ratings[key] = f
+        overall = _safe_float(
+            record.get("overall") or record.get("overallQuality") or record.get("quality")
+        )
+        if overall is None and category_ratings:
+            overall = sum(category_ratings.values()) / len(category_ratings)
+        thumbs_up = _safe_int(record.get("thumbsUpTotal") or record.get("thumbsUp") or record.get("thumbs_up"))
+        thumbs_down = _safe_int(record.get("thumbsDownTotal") or record.get("thumbsDown") or record.get("thumbs_down"))
         helpful = _safe_int(record.get("helpful"))
-        thumbs_up = _safe_int(record.get("thumbsUp") or record.get("thumbs_up"))
-        thumbs_down = _safe_int(record.get("thumbsDown") or record.get("thumbs_down"))
         return SchoolRating(
             date=rating_date,
             comment=str(record.get("comment") or ""),
@@ -518,8 +796,69 @@ class RMPClient:
         record = get_school_node(store, school_id)
         if record is None:
             raise ParsingError(f"School record not found in __RELAY_STORE__ for id={school_id!r}")
-        node = self._relay_school_to_node(record)
+        node = self._relay_school_to_node(store, record)
         return self._parse_school_node(node)
+
+    def get_compare_schools(self, school_id_1: str, school_id_2: str) -> CompareSchoolsResult:
+        """Fetch and compare two schools from the compare page (/compare/schools/id1/id2).
+
+        Data is loaded from the compare page HTML; both schools include summary
+        category ratings (reputation, safety, facilities, etc.) when present.
+        """
+        store = self._fetch_relay_store_for_compare_schools(school_id_1, school_id_2)
+        record_1 = get_school_node(store, school_id_1)
+        record_2 = get_school_node(store, school_id_2)
+        if record_1 is None:
+            raise ParsingError(f"School record not found in __RELAY_STORE__ for id={school_id_1!r}")
+        if record_2 is None:
+            raise ParsingError(f"School record not found in __RELAY_STORE__ for id={school_id_2!r}")
+        node_1 = self._relay_school_to_node(store, record_1)
+        node_2 = self._relay_school_to_node(store, record_2)
+        return CompareSchoolsResult(
+            school_1=self._parse_school_node(node_1),
+            school_2=self._parse_school_node(node_2),
+        )
+
+    def _fetch_school_ratings_via_graphql(
+        self,
+        school_id: str,
+        *,
+        after: Optional[str] = None,
+        first: int = 20,
+    ) -> SchoolRatingsPage:
+        """Fetch a page of school ratings from the GraphQL API (for cursor-based next pages)."""
+        node_id = _school_node_id(school_id)
+        variables: Dict[str, Any] = {"id": node_id, "first": first}
+        if after is not None:
+            variables["after"] = after
+        payload = {"query": SCHOOL_RATINGS_QUERY, "variables": variables}
+        data = self.raw_query(payload)
+        node = (data.get("data") or {}).get("node")
+        if not node:
+            raise ParsingError("GraphQL response missing data.node (school not found or invalid id)")
+        school = self._parse_school_node({
+            "id": node.get("legacyId") or node.get("id"),
+            "name": node.get("name"),
+            "location": _format_location(node),
+            "overall_quality": node.get("avgRatingRounded"),
+            "num_ratings": node.get("numRatings"),
+        })
+        ratings_conn = node.get("ratings") or {}
+        edges = ratings_conn.get("edges") or []
+        page_info = ratings_conn.get("pageInfo") or {}
+        ratings_models: List[SchoolRating] = []
+        for edge in edges:
+            r = edge.get("node") if isinstance(edge, dict) else None
+            if isinstance(r, dict):
+                ratings_models.append(self._parse_school_rating_node(r))
+        has_next = bool(page_info.get("hasNextPage", False))
+        next_cursor = page_info.get("endCursor") if page_info else None
+        return SchoolRatingsPage(
+            school=school,
+            ratings=ratings_models,
+            has_next_page=has_next,
+            next_cursor=next_cursor,
+        )
 
     def get_school_ratings_page(
         self,
@@ -528,13 +867,22 @@ class RMPClient:
         cursor: Optional[str] = None,
         page_size: int = 20,
     ) -> SchoolRatingsPage:
-        """Fetch a single page of ratings for a school."""
+        """Fetch a single page of ratings for a school.
+
+        First page is from the school page HTML. Subsequent pages are fetched
+        via the GraphQL API using the returned next_cursor. Use iter_school_ratings
+        to iterate all ratings.
+        """
+        if cursor is not None and not cursor.isdigit():
+            return self._fetch_school_ratings_via_graphql(
+                school_id, after=cursor, first=page_size
+            )
         store = self._fetch_relay_store_for_school(school_id)
         record = get_school_node(store, school_id)
         if record is None:
             raise ParsingError(f"School record not found in __RELAY_STORE__ for id={school_id!r}")
 
-        school = self._parse_school_node(self._relay_school_to_node(record))
+        school = self._parse_school_node(self._relay_school_to_node(store, record))
         rating_records = get_school_ratings_from_store(store, record)
         if not rating_records:
             rating_records = get_all_school_rating_records(store)
@@ -543,11 +891,20 @@ class RMPClient:
         for r in rating_records:
             ratings_models.append(self._parse_school_rating_node(r))
 
-        start = int(cursor) if cursor is not None else 0
-        start = max(0, start)
-        page_slice = ratings_models[start : start + page_size]
-        has_next = (start + page_size) < len(ratings_models)
-        next_cursor = str(start + page_size) if has_next else None
+        page_info = get_school_ratings_connection_page_info(store, record)
+        if cursor is not None and cursor.isdigit():
+            start = max(0, int(cursor))
+            page_slice = ratings_models[start : start + page_size]
+            has_next = (start + page_size) < len(ratings_models)
+            next_cursor = str(start + page_size) if has_next else None
+        else:
+            page_slice = ratings_models[:page_size]
+            if page_info and page_info.get("hasNextPage") and page_info.get("endCursor"):
+                has_next = True
+                next_cursor = page_info.get("endCursor")
+            else:
+                has_next = len(ratings_models) > page_size
+                next_cursor = str(page_size) if has_next else None
 
         return SchoolRatingsPage(
             school=school,

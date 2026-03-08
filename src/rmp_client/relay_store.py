@@ -161,6 +161,33 @@ def _edges_to_rating_records(
     return ratings
 
 
+def _get_professor_ratings_connection(
+    store: Dict[str, Any], professor_record: Dict[str, Any]
+) -> Optional[Dict[str, Any]]:
+    """Resolve the ratings connection dict for a professor/teacher record."""
+    ratings_ref = _get_ratings_connection_ref(professor_record)
+    if ratings_ref is not None:
+        return _resolve_ref(store, ratings_ref)
+    ratings_field = professor_record.get("ratings")
+    if isinstance(ratings_field, dict) and "edges" in ratings_field:
+        return ratings_field
+    return None
+
+
+def get_professor_ratings_connection_page_info(
+    store: Dict[str, Any], professor_record: Dict[str, Any]
+) -> Optional[Dict[str, Any]]:
+    """Return pageInfo (hasNextPage, endCursor) for the professor's ratings connection."""
+    conn = _get_professor_ratings_connection(store, professor_record)
+    if not isinstance(conn, dict):
+        return None
+    page_info_ref = conn.get("pageInfo")
+    if not _is_record_ref(page_info_ref):
+        return None
+    info = _resolve_ref(store, page_info_ref)
+    return info if isinstance(info, dict) else None
+
+
 def get_ratings_from_store(
     store: Dict[str, Any],
     professor_record: Dict[str, Any],
@@ -169,18 +196,9 @@ def get_ratings_from_store(
 
     Handles Relay connection pattern: professor.ratings -> connection (or __ref) -> edges (list or __refs) -> node (__ref).
     """
-    ratings: List[Dict[str, Any]] = []
-    conn: Optional[Dict[str, Any]] = None
-    ratings_ref = _get_ratings_connection_ref(professor_record)
-    if ratings_ref is not None:
-        conn = _resolve_ref(store, ratings_ref)
-    else:
-        # Inline connection: professor.ratings is the connection dict itself
-        ratings_field = professor_record.get("ratings")
-        if isinstance(ratings_field, dict) and "edges" in ratings_field:
-            conn = ratings_field
+    conn = _get_professor_ratings_connection(store, professor_record)
     if not conn:
-        return ratings
+        return []
     edges_value = conn.get("edges")
     return _edges_to_rating_records(store, edges_value)
 
@@ -197,14 +215,18 @@ def get_all_rating_records(store: Dict[str, Any]) -> List[Dict[str, Any]]:
 
 
 def get_school_node(store: Dict[str, Any], school_id: str) -> Optional[Dict[str, Any]]:
-    """Find the School/University record in a Relay store by id."""
+    """Find the School/University record in a Relay store by legacy ID (URL slug) or id."""
     sid = str(school_id)
     for key, record in store.items():
         if not isinstance(record, dict):
             continue
         if record.get("__typename") not in ("School", "University"):
             continue
-        rid = record.get("id") or record.get("__id") or record.get("legacyId")
+        # Match by legacyId first (URL slug in /school/{legacyId})
+        legacy = record.get("legacyId")
+        if legacy is not None and str(legacy) == sid:
+            return record
+        rid = record.get("id") or record.get("__id")
         if rid is not None and str(rid) == sid:
             return record
         try:
@@ -225,39 +247,100 @@ def get_school_node(store: Dict[str, Any], school_id: str) -> Optional[Dict[str,
     return None
 
 
-def get_school_ratings_from_store(
-    store: Dict[str, Any],
-    school_record: Dict[str, Any],
+def _get_school_ratings_connection_ref(school_record: Dict[str, Any]) -> Optional[Dict[str, str]]:
+    """Get the ratings connection __ref from a school record.
+
+    RMP uses keys like "ratings(first:5)" or "ratings"; value is {"__ref": "..."}.
+    """
+    for key in ("ratings(first:5)", "ratings"):
+        val = school_record.get(key)
+        if _is_record_ref(val):
+            return val
+    for key, val in school_record.items():
+        if key.startswith("ratings") and _is_record_ref(val):
+            return val
+    return None
+
+
+def _edges_to_school_rating_records(
+    store: Dict[str, Any], edges_value: Any
 ) -> List[Dict[str, Any]]:
-    """Extract school rating records from the store (same connection pattern as professor ratings)."""
+    """Turn connection edges (list or __refs) into list of SchoolRating record dicts."""
     ratings: List[Dict[str, Any]] = []
-    ratings_field = school_record.get("ratings")
-    if ratings_field is None:
+    school_typenames = ("SchoolRating", "Rating", "SchoolReview", "Review")
+    edge_refs: List[str] = []
+    if isinstance(edges_value, list):
+        for edge in edges_value:
+            if not isinstance(edge, dict):
+                continue
+            node = edge.get("node")
+            if _is_record_ref(node):
+                rec = _resolve_ref(store, node)
+                if rec and rec.get("__typename") in school_typenames:
+                    ratings.append(rec)
+            elif isinstance(node, dict):
+                ratings.append(node)
         return ratings
-    conn = ratings_field if isinstance(ratings_field, dict) else None
-    if _is_record_ref(ratings_field):
-        conn = _resolve_ref(store, ratings_field)
-    if not conn:
+    if isinstance(edges_value, dict) and "__refs" in edges_value:
+        edge_refs = edges_value.get("__refs") or []
+    if not edge_refs:
         return ratings
-    edges = conn.get("edges")
-    if not isinstance(edges, list):
-        return ratings
-    for edge in edges:
-        if not isinstance(edge, dict):
+    for ref_id in edge_refs:
+        edge_record = store.get(ref_id) if isinstance(ref_id, str) else None
+        if not isinstance(edge_record, dict):
             continue
-        node = edge.get("node")
+        node = edge_record.get("node")
         if _is_record_ref(node):
             rating_record = _resolve_ref(store, node)
-            if rating_record and rating_record.get("__typename") in (
-                "Rating",
-                "SchoolRating",
-                "Review",
-                "SchoolReview",
-            ):
+            if rating_record and rating_record.get("__typename") in school_typenames:
                 ratings.append(rating_record)
         elif isinstance(node, dict):
             ratings.append(node)
     return ratings
+
+
+def _get_school_ratings_connection(
+    store: Dict[str, Any], school_record: Dict[str, Any]
+) -> Optional[Dict[str, Any]]:
+    """Resolve the ratings connection dict for a school record."""
+    ratings_ref = _get_school_ratings_connection_ref(school_record)
+    if ratings_ref is not None:
+        return _resolve_ref(store, ratings_ref)
+    ratings_field = school_record.get("ratings")
+    if isinstance(ratings_field, dict) and "edges" in ratings_field:
+        return ratings_field
+    if _is_record_ref(ratings_field):
+        return _resolve_ref(store, ratings_field)
+    return None
+
+
+def get_school_ratings_connection_page_info(
+    store: Dict[str, Any], school_record: Dict[str, Any]
+) -> Optional[Dict[str, Any]]:
+    """Return pageInfo (hasNextPage, endCursor) for the school's ratings connection."""
+    conn = _get_school_ratings_connection(store, school_record)
+    if not isinstance(conn, dict):
+        return None
+    page_info_ref = conn.get("pageInfo")
+    if not _is_record_ref(page_info_ref):
+        return None
+    info = _resolve_ref(store, page_info_ref)
+    return info if isinstance(info, dict) else None
+
+
+def get_school_ratings_from_store(
+    store: Dict[str, Any],
+    school_record: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    """Extract school rating records from the store.
+
+    Handles Relay pattern: school.ratings(first:5) -> connection -> edges (list or __refs) -> node (__ref).
+    """
+    conn = _get_school_ratings_connection(store, school_record)
+    if not conn:
+        return []
+    edges_value = conn.get("edges")
+    return _edges_to_school_rating_records(store, edges_value)
 
 
 def get_all_school_rating_records(store: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -269,3 +352,165 @@ def get_all_school_rating_records(store: Dict[str, Any]) -> List[Dict[str, Any]]
         if record.get("__typename") in ("Rating", "SchoolRating", "Review", "SchoolReview"):
             out.append(record)
     return out
+
+
+# ---- Professor search page (search/professors/?q=...) ------------------------------------------
+
+
+def get_teacher_search_connection(store: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Get the TeacherSearchConnectionConnection from a search page relay store.
+
+    Root has newSearch __ref -> newSearch record has teachers(...) __ref -> connection.
+    """
+    root = store.get("client:root")
+    if not isinstance(root, dict):
+        return None
+    new_search_ref = root.get("newSearch")
+    if not _is_record_ref(new_search_ref):
+        return None
+    new_search = _resolve_ref(store, new_search_ref)
+    if not isinstance(new_search, dict):
+        return None
+    for key, val in new_search.items():
+        if key.startswith("teachers(") and _is_record_ref(val):
+            conn = _resolve_ref(store, val)
+            if isinstance(conn, dict) and conn.get("edges") is not None:
+                return conn
+    return None
+
+
+def _edges_to_teacher_records(
+    store: Dict[str, Any], edges_value: Any
+) -> List[Dict[str, Any]]:
+    """Turn connection edges (list or __refs) into list of Teacher/Professor record dicts."""
+    teachers: List[Dict[str, Any]] = []
+    teacher_typenames = ("Teacher", "Professor")
+    edge_refs: List[str] = []
+    if isinstance(edges_value, list):
+        for edge in edges_value:
+            if not isinstance(edge, dict):
+                continue
+            node = edge.get("node")
+            if _is_record_ref(node):
+                rec = _resolve_ref(store, node)
+                if rec and rec.get("__typename") in teacher_typenames:
+                    teachers.append(rec)
+            elif isinstance(node, dict) and node.get("__typename") in teacher_typenames:
+                teachers.append(node)
+        return teachers
+    if isinstance(edges_value, dict) and "__refs" in edges_value:
+        edge_refs = edges_value.get("__refs") or []
+    if not edge_refs:
+        return teachers
+    for ref_id in edge_refs:
+        edge_record = store.get(ref_id) if isinstance(ref_id, str) else None
+        if not isinstance(edge_record, dict):
+            continue
+        node = edge_record.get("node")
+        if _is_record_ref(node):
+            rec = _resolve_ref(store, node)
+            if rec and rec.get("__typename") in teacher_typenames:
+                teachers.append(rec)
+        elif isinstance(node, dict) and node.get("__typename") in teacher_typenames:
+            teachers.append(node)
+    return teachers
+
+
+def get_teacher_search_result_count(connection: Dict[str, Any]) -> Optional[int]:
+    """Get resultCount from TeacherSearchConnectionConnection (total matches)."""
+    val = connection.get("resultCount")
+    return int(val) if val is not None else None
+
+
+def get_teacher_search_page_info(
+    store: Dict[str, Any], connection: Dict[str, Any]
+) -> Optional[Dict[str, Any]]:
+    """Resolve pageInfo __ref from connection; return dict with hasNextPage, endCursor."""
+    page_info_ref = connection.get("pageInfo")
+    if not _is_record_ref(page_info_ref):
+        return None
+    info = _resolve_ref(store, page_info_ref)
+    if not isinstance(info, dict):
+        return None
+    return info
+
+
+# ---- School search page (search/schools?q=...) ----------------------------------------------
+
+
+def get_school_search_connection(store: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Get the SchoolSearchConnectionConnection from a search page relay store.
+
+    Root has newSearch __ref -> newSearch record has schools(...) __ref -> connection.
+    """
+    root = store.get("client:root")
+    if not isinstance(root, dict):
+        return None
+    new_search_ref = root.get("newSearch")
+    if not _is_record_ref(new_search_ref):
+        return None
+    new_search = _resolve_ref(store, new_search_ref)
+    if not isinstance(new_search, dict):
+        return None
+    for key, val in new_search.items():
+        if key.startswith("schools(") and _is_record_ref(val):
+            conn = _resolve_ref(store, val)
+            if isinstance(conn, dict) and conn.get("edges") is not None:
+                return conn
+    return None
+
+
+def _edges_to_school_records(
+    store: Dict[str, Any], edges_value: Any
+) -> List[Dict[str, Any]]:
+    """Turn connection edges (list or __refs) into list of School record dicts."""
+    schools: List[Dict[str, Any]] = []
+    school_typenames = ("School", "University")
+    edge_refs: List[str] = []
+    if isinstance(edges_value, list):
+        for edge in edges_value:
+            if not isinstance(edge, dict):
+                continue
+            node = edge.get("node")
+            if _is_record_ref(node):
+                rec = _resolve_ref(store, node)
+                if rec and rec.get("__typename") in school_typenames:
+                    schools.append(rec)
+            elif isinstance(node, dict) and node.get("__typename") in school_typenames:
+                schools.append(node)
+        return schools
+    if isinstance(edges_value, dict) and "__refs" in edges_value:
+        edge_refs = edges_value.get("__refs") or []
+    if not edge_refs:
+        return schools
+    for ref_id in edge_refs:
+        edge_record = store.get(ref_id) if isinstance(ref_id, str) else None
+        if not isinstance(edge_record, dict):
+            continue
+        node = edge_record.get("node")
+        if _is_record_ref(node):
+            rec = _resolve_ref(store, node)
+            if rec and rec.get("__typename") in school_typenames:
+                schools.append(rec)
+        elif isinstance(node, dict) and node.get("__typename") in school_typenames:
+            schools.append(node)
+    return schools
+
+
+def get_school_search_result_count(connection: Dict[str, Any]) -> Optional[int]:
+    """Get resultCount from SchoolSearchConnectionConnection (total matches)."""
+    val = connection.get("resultCount")
+    return int(val) if val is not None else None
+
+
+def get_school_search_page_info(
+    store: Dict[str, Any], connection: Dict[str, Any]
+) -> Optional[Dict[str, Any]]:
+    """Resolve pageInfo __ref from connection; return dict with hasNextPage, endCursor."""
+    page_info_ref = connection.get("pageInfo")
+    if not _is_record_ref(page_info_ref):
+        return None
+    info = _resolve_ref(store, page_info_ref)
+    if not isinstance(info, dict):
+        return None
+    return info

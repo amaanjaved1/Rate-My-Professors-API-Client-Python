@@ -10,7 +10,7 @@ class School(BaseModel):
     """A school on the RateMyProfessors website."""
     id: str
     name: str
-    # Scraped location string (e.g. "Kingston, ON" or "City, State, Country")
+    # Single location string (e.g. "Kingston, ON")
     location: Optional[str] = None
     # From school page: overall quality and category ratings (out of 5)
     overall_quality: Optional[float] = None
@@ -80,6 +80,7 @@ class ProfessorSearchResult(BaseModel):
     page: int
     page_size: int
     has_next_page: bool
+    next_cursor: Optional[str] = None  # from relay pageInfo.endCursor for next page
 
 
 class SchoolSearchResult(BaseModel):
@@ -90,6 +91,14 @@ class SchoolSearchResult(BaseModel):
     page: int
     page_size: int
     has_next_page: bool
+    next_cursor: Optional[str] = None  # from relay pageInfo.endCursor for next page
+
+
+class CompareSchoolsResult(BaseModel):
+    """Result of comparing two schools (from /compare/schools/id1/id2)."""
+
+    school_1: School
+    school_2: School
 
 
 class SchoolRating(BaseModel):

@@ -8,6 +8,8 @@ from rmp_client.config import (
     DEFAULT_GET_HEADERS,
     DEFAULT_PROFESSORS_PAGE_URL,
     DEFAULT_SCHOOLS_PAGE_URL,
+    DEFAULT_SEARCH_PROFESSORS_PAGE_URL,
+    DEFAULT_SEARCH_SCHOOLS_PAGE_URL,
     RMPClientConfig,
 )
 
@@ -26,6 +28,14 @@ class TestRMPClientConfigDefaults:
     def test_default_compare_schools_page_url(self) -> None:
         config = RMPClientConfig()
         assert config.compare_schools_page_url == DEFAULT_COMPARE_SCHOOLS_PAGE_URL
+
+    def test_default_search_professors_page_url(self) -> None:
+        config = RMPClientConfig()
+        assert config.search_professors_page_url == DEFAULT_SEARCH_PROFESSORS_PAGE_URL
+
+    def test_default_search_schools_page_url(self) -> None:
+        config = RMPClientConfig()
+        assert config.search_schools_page_url == DEFAULT_SEARCH_SCHOOLS_PAGE_URL
 
     def test_default_base_url(self) -> None:
         config = RMPClientConfig()

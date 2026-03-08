@@ -10,7 +10,11 @@ from rmp_client.relay_store import (
     extract_relay_store,
     get_all_rating_records,
     get_professor_node,
+    get_professor_ratings_connection_page_info,
     get_ratings_from_store,
+    get_school_node,
+    get_school_ratings_connection_page_info,
+    get_school_ratings_from_store,
 )
 
 
@@ -179,6 +183,112 @@ class TestGetRatingsFromStore:
         assert len(ratings) == 2
         assert ratings[0]["comment"] == "First"
         assert ratings[1]["comment"] == "Second"
+
+    def test_professor_ratings_page_info_when_present(self) -> None:
+        """When connection has pageInfo __ref, return hasNextPage and endCursor."""
+        store = {
+            "Teacher-1": {
+                "__typename": "Teacher",
+                "legacyId": 1,
+                "ratings(first:5)": {"__ref": "conn:1:ratings"},
+            },
+            "conn:1:ratings": {
+                "edges": {"__refs": ["e1"]},
+                "pageInfo": {"__ref": "conn:1:pageInfo"},
+            },
+            "conn:1:pageInfo": {"hasNextPage": True, "endCursor": "YXJyYXljb25uZWN0aW9uOjQ="},
+            "e1": {"node": {"__ref": "Rating-1"}},
+            "Rating-1": {"__typename": "Rating", "comment": "One"},
+        }
+        prof = store["Teacher-1"]
+        info = get_professor_ratings_connection_page_info(store, prof)
+        assert info is not None
+        assert info.get("hasNextPage") is True
+        assert info.get("endCursor") == "YXJyYXljb25uZWN0aW9uOjQ="
+
+    def test_professor_ratings_page_info_when_absent(self) -> None:
+        """When connection has no pageInfo, return None."""
+        store = {
+            "Teacher-2823076": {
+                "__typename": "Teacher",
+                "legacyId": 2823076,
+                "ratings(first:5)": {"__ref": "conn:2823076:ratings"},
+            },
+            "conn:2823076:ratings": {
+                "__typename": "RatingConnection",
+                "edges": {"__refs": ["edge:0", "edge:1"]},
+            },
+        }
+        prof = store["Teacher-2823076"]
+        info = get_professor_ratings_connection_page_info(store, prof)
+        assert info is None
+
+
+class TestGetSchoolNode:
+    """Find School record in store by legacyId or id."""
+
+    def test_finds_school_by_legacy_id(self) -> None:
+        """RMP school page uses legacyId (e.g. 1466) for URL /school/1466."""
+        store = {
+            "U2Nob29sLTE0NjY=": {
+                "__typename": "School",
+                "legacyId": 1466,
+                "name": "Queen's University at Kingston",
+                "location": "Kingston, ON",
+            },
+        }
+        node = get_school_node(store, "1466")
+        assert node is not None
+        assert node["name"] == "Queen's University at Kingston"
+        assert node["legacyId"] == 1466
+
+
+class TestGetSchoolRatingsFromStore:
+    """Extract school ratings from store (CampusRatingConnection, edges.__refs)."""
+
+    def test_school_ratings_via_edges_refs_rmp_style(self) -> None:
+        """Real RMP store: ratings(first:5) is __ref, connection has edges.__refs, SchoolRating nodes."""
+        store = {
+            "School-1466": {
+                "__typename": "School",
+                "legacyId": 1466,
+                "ratings(first:5)": {"__ref": "conn:1466:ratings"},
+            },
+            "conn:1466:ratings": {
+                "__typename": "CampusRatingConnection",
+                "edges": {"__refs": ["edge:s0", "edge:s1"]},
+            },
+            "edge:s0": {"node": {"__ref": "SchoolRating-1"}},
+            "edge:s1": {"node": {"__ref": "SchoolRating-2"}},
+            "SchoolRating-1": {"__typename": "SchoolRating", "comment": "Changed my life.", "reputationRating": 5},
+            "SchoolRating-2": {"__typename": "SchoolRating", "comment": "Love it here.", "reputationRating": 5},
+        }
+        school = store["School-1466"]
+        ratings = get_school_ratings_from_store(store, school)
+        assert len(ratings) == 2
+        assert ratings[0]["comment"] == "Changed my life."
+        assert ratings[1]["comment"] == "Love it here."
+
+    def test_school_ratings_page_info_when_present(self) -> None:
+        store = {
+            "School-1466": {
+                "__typename": "School",
+                "legacyId": 1466,
+                "ratings(first:5)": {"__ref": "conn:1466:ratings"},
+            },
+            "conn:1466:ratings": {
+                "edges": {"__refs": ["edge:s0"]},
+                "pageInfo": {"__ref": "conn:1466:pageInfo"},
+            },
+            "conn:1466:pageInfo": {"hasNextPage": True, "endCursor": "c2Nob29sOjE="},
+            "edge:s0": {"node": {"__ref": "SchoolRating-1"}},
+            "SchoolRating-1": {"__typename": "SchoolRating", "comment": "Great"},
+        }
+        school = store["School-1466"]
+        info = get_school_ratings_connection_page_info(store, school)
+        assert info is not None
+        assert info.get("hasNextPage") is True
+        assert info.get("endCursor") == "c2Nob29sOjE="
 
 
 class TestGetAllRatingRecords:

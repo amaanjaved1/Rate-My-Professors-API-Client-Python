@@ -36,9 +36,7 @@ def _add_school_to_store(store: dict, prof_key: str, school_id: str = "s1") -> N
         "__typename": "School",
         "id": school_id,
         "name": "Test University",
-        "city": "City",
-        "state": "ST",
-        "country": "USA",
+        "location": "City, ST, USA",
     }
     store[prof_key]["school"] = {"__ref": "node:s1"}
 
@@ -206,3 +204,212 @@ class TestRMPClientProfessorPageUrl:
         client = RMPClient(config=config)
         url = client._professor_page_url("legacy-123")
         assert url == "https://site.com/professor/legacy-123"
+
+
+class TestRMPClientSearchSchools:
+    """search_schools fetches search page and parses __RELAY_STORE__."""
+
+    def test_returns_schools_from_search_page(
+        self, httpx_mock: pytest_httpx.HTTPXMock
+    ) -> None:
+        store = {
+            "client:root": {"__id": "client:root", "newSearch": {"__ref": "client:root:newSearch"}},
+            "client:root:newSearch": {
+                "__id": "client:root:newSearch",
+                "schools(after:\"\",first:5,query:{\"text\":\"queens\"})": {"__ref": "conn:schools"},
+            },
+            "conn:schools": {
+                "__typename": "SchoolSearchConnectionConnection",
+                "resultCount": 8,
+                "edges": {"__refs": ["edge:0", "edge:1"]},
+                "pageInfo": {"__ref": "conn:pageInfo"},
+            },
+            "conn:pageInfo": {"hasNextPage": True, "endCursor": "YXJyYXljb25uZWN0aW9uOjQ="},
+            "edge:0": {"node": {"__ref": "S1"}},
+            "edge:1": {"node": {"__ref": "S2"}},
+            "S1": {
+                "__typename": "School",
+                "legacyId": 231,
+                "name": "CUNY Queens College",
+                "city": "Queens",
+                "state": "NY",
+                "numRatings": 551,
+                "avgRatingRounded": 3.3,
+                "id": "S1",
+            },
+            "S2": {
+                "__typename": "School",
+                "legacyId": 842,
+                "name": "St. John's University - Jamaica/Queens",
+                "city": "Queens",
+                "state": "NY",
+                "numRatings": 425,
+                "avgRatingRounded": 3.5,
+                "id": "S2",
+            },
+        }
+        html = _html_with_store(store)
+        config = RMPClientConfig(
+            search_schools_page_url="https://www.ratemyprofessors.com/search/schools/",
+            rate_limit_per_minute=1000,
+        )
+        httpx_mock.add_response(
+            url="https://www.ratemyprofessors.com/search/schools?q=queens",
+            text=html,
+        )
+        with RMPClient(config=config) as client:
+            result = client.search_schools("queens")
+        assert len(result.schools) == 2
+        assert result.schools[0].name == "CUNY Queens College"
+        assert result.schools[0].location == "Queens, NY"
+        assert result.schools[0].num_ratings == 551
+        assert result.schools[0].overall_quality == 3.3
+        assert result.schools[1].name == "St. John's University - Jamaica/Queens"
+        assert result.total == 8
+        assert result.has_next_page is True
+        assert result.next_cursor == "YXJyYXljb25uZWN0aW9uOjQ="
+
+
+class TestRMPClientSearchProfessors:
+    """search_professors fetches search page and parses __RELAY_STORE__."""
+
+    def test_returns_professors_from_search_page(
+        self, httpx_mock: pytest_httpx.HTTPXMock
+    ) -> None:
+        store = {
+            "client:root": {"__id": "client:root", "newSearch": {"__ref": "client:root:newSearch"}},
+            "client:root:newSearch": {
+                "__id": "client:root:newSearch",
+                "teachers(after:\"\",first:5,query:{\"text\":\"test\"})": {"__ref": "conn:teachers"},
+            },
+            "conn:teachers": {
+                "__typename": "TeacherSearchConnectionConnection",
+                "resultCount": 196,
+                "edges": {"__refs": ["edge:0", "edge:1"]},
+                "pageInfo": {"__ref": "conn:pageInfo"},
+            },
+            "conn:pageInfo": {"hasNextPage": True, "endCursor": "YXJyYXljb25uZWN0aW9uOjQ="},
+            "edge:0": {"node": {"__ref": "T1"}},
+            "edge:1": {"node": {"__ref": "T2"}},
+            "T1": {
+                "__typename": "Teacher",
+                "legacyId": 2707318,
+                "firstName": "Susan",
+                "lastName": "Testani",
+                "department": "Mathematics",
+                "avgRating": 3.1,
+                "numRatings": 9,
+                "wouldTakeAgainPercent": 44.44,
+                "avgDifficulty": 3,
+                "school": {"__ref": "S1"},
+            },
+            "S1": {"__typename": "School", "id": "S1", "name": "Montgomery County Community College (all)"},
+            "T2": {
+                "__typename": "Teacher",
+                "legacyId": 3079576,
+                "firstName": "Kimberly",
+                "lastName": "Testa Fortier",
+                "department": "Education",
+                "avgRating": 5,
+                "numRatings": 1,
+                "wouldTakeAgainPercent": 100,
+                "avgDifficulty": 1,
+                "school": {"__ref": "S2"},
+            },
+            "S2": {"__typename": "School", "id": "S2", "name": "Purdue University Global"},
+        }
+        html = _html_with_store(store)
+        config = RMPClientConfig(
+            search_professors_page_url="https://www.ratemyprofessors.com/search/professors/",
+            rate_limit_per_minute=1000,
+        )
+        httpx_mock.add_response(
+            url="https://www.ratemyprofessors.com/search/professors?q=test",
+            text=html,
+        )
+        with RMPClient(config=config) as client:
+            result = client.search_professors("test")
+        assert len(result.professors) == 2
+        assert result.professors[0].name == "Susan Testani"
+        assert result.professors[0].department == "Mathematics"
+        assert result.professors[0].overall_rating == 3.1
+        assert result.professors[0].num_ratings == 9
+        assert result.professors[0].school is not None
+        assert result.professors[0].school.name == "Montgomery County Community College (all)"
+        assert result.professors[1].name == "Kimberly Testa Fortier"
+        assert result.total == 196
+        assert result.has_next_page is True
+        assert result.next_cursor == "YXJyYXljb25uZWN0aW9uOjQ="
+
+
+class TestRMPClientGetCompareSchools:
+    """get_compare_schools fetches compare page and returns both schools."""
+
+    def test_returns_both_schools_from_compare_page(
+        self, httpx_mock: pytest_httpx.HTTPXMock
+    ) -> None:
+        store = {
+            "S1466": {
+                "__typename": "School",
+                "legacyId": 1466,
+                "name": "Queen's University at Kingston",
+                "location": "Kingston, ON",
+                "numRatings": 460,
+                "avgRatingRounded": 4,
+                "summary": {"__ref": "sum1466"},
+            },
+            "sum1466": {
+                "__typename": "SchoolSummary",
+                "schoolReputation": 4.42,
+                "schoolSafety": 4.2,
+                "schoolSatisfaction": 4.19,
+                "campusCondition": 4.17,
+                "socialActivities": 4.14,
+                "campusLocation": 4.03,
+                "clubAndEventActivities": 4.01,
+                "careerOpportunities": 4.0,
+                "internetSpeed": 3.72,
+                "foodQuality": 3.27,
+            },
+            "S1491": {
+                "__typename": "School",
+                "legacyId": 1491,
+                "name": "Western University",
+                "location": "London, ON",
+                "numRatings": 889,
+                "avgRatingRounded": 3.9,
+                "summary": {"__ref": "sum1491"},
+            },
+            "sum1491": {
+                "__typename": "SchoolSummary",
+                "schoolReputation": 4.05,
+                "schoolSafety": 4.11,
+                "schoolSatisfaction": 4.07,
+                "campusCondition": 4.14,
+                "socialActivities": 4.14,
+                "campusLocation": 3.79,
+                "clubAndEventActivities": 4.05,
+                "careerOpportunities": 3.75,
+                "internetSpeed": 3.48,
+                "foodQuality": 3.44,
+            },
+        }
+        html = _html_with_store(store)
+        config = RMPClientConfig(
+            compare_schools_page_url="https://www.ratemyprofessors.com/compare/schools/",
+            rate_limit_per_minute=1000,
+        )
+        httpx_mock.add_response(
+            url="https://www.ratemyprofessors.com/compare/schools/1466/1491",
+            text=html,
+        )
+        with RMPClient(config=config) as client:
+            result = client.get_compare_schools("1466", "1491")
+        assert result.school_1.name == "Queen's University at Kingston"
+        assert result.school_1.num_ratings == 460
+        assert result.school_1.overall_quality == 4.0
+        assert result.school_1.reputation == 4.42
+        assert result.school_2.name == "Western University"
+        assert result.school_2.num_ratings == 889
+        assert result.school_2.overall_quality == 3.9
+        assert result.school_2.reputation == 4.05
