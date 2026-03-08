@@ -80,6 +80,42 @@ class HttpClient:
         assert last_exc is not None
         raise RetryError(last_exc)
 
+    def get_html(
+        self,
+        url: str,
+        *,
+        headers: Optional[Mapping[str, str]] = None,
+    ) -> str:
+        """GET URL and return response text with retries and rate limiting."""
+        attempt = 0
+        last_exc: Optional[Exception] = None
+
+        while attempt <= self._config.max_retries:
+            attempt += 1
+            self._bucket.consume()
+            try:
+                response = self._client.get(
+                    url,
+                    headers=self._headers(headers),
+                )
+            except httpx.HTTPError as exc:
+                last_exc = exc
+                if attempt > self._config.max_retries:
+                    raise RetryError(exc)
+                continue
+
+            if 200 <= response.status_code < 300:
+                return response.text
+
+            err = HttpError(response.status_code, str(response.url), body=response.text)
+            last_exc = err
+            if 500 <= response.status_code < 600 and attempt <= self._config.max_retries:
+                continue
+            raise err
+
+        assert last_exc is not None
+        raise RetryError(last_exc)
+
 
 class HttpClientContext:
     """Context-manager facade for HttpClient."""
