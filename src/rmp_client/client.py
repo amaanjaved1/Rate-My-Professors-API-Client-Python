@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import date
 from typing import Any, Dict, Iterable, Iterator, List, Mapping, Optional
 
@@ -13,6 +14,13 @@ from .models import (
     Rating,
     School,
     SchoolSearchResult,
+)
+from .relay_store import (
+    extract_relay_store,
+    get_professor_node,
+    get_ratings_from_store,
+    get_all_rating_records,
+    _resolve_ref,
 )
 
 
@@ -190,15 +198,69 @@ class RMPClient:
 
     # ---- Professor details + ratings -------------------------------------------
 
-    def get_professor(self, professor_id: str) -> Professor:
-        """Fetch detailed information about a single professor."""
-        variables: Dict[str, Any] = {"id": professor_id}
-        payload = {"operationName": "GetProfessor", "variables": variables, "query": "..."}
-        data = self.raw_query(payload)
+    def _professor_page_url(self, professor_id: str) -> str:
+        base = self._config.professor_page_base.rstrip("/")
+        return f"{base}/professor/{professor_id}"
+
+    def _fetch_relay_store_for_professor(self, professor_id: str) -> Dict[str, Any]:
+        """GET professor page HTML and return parsed __RELAY_STORE__."""
+        url = self._professor_page_url(professor_id)
+        html = self._client.get_html(url)
         try:
-            node: Mapping[str, Any] = data["data"]["node"]
-        except Exception as exc:  # noqa: BLE001
-            raise ParsingError(f"Unexpected get_professor payload: {data!r}") from exc
+            return extract_relay_store(html)
+        except (ValueError, json.JSONDecodeError) as exc:
+            raise ParsingError(f"Failed to extract __RELAY_STORE__ from professor page: {exc}") from exc
+
+    def _relay_professor_to_node(self, store: Dict[str, Any], record: Mapping[str, Any]) -> Dict[str, Any]:
+        """Convert a Relay Professor record to the shape _parse_professor_node expects."""
+        node: Dict[str, Any] = {
+            "id": record.get("id") or record.get("__id") or record.get("legacyId"),
+            "name": record.get("name") or " ".join(filter(None, [record.get("firstName"), record.get("lastName")])),
+            "department": record.get("department"),
+            "url": record.get("url"),
+            "overallRating": record.get("overallRating"),
+            "numRatings": record.get("numRatings"),
+            "percentTakeAgain": record.get("percentTakeAgain"),
+            "levelOfDifficulty": record.get("levelOfDifficulty"),
+            "tags": record.get("tags") or [],
+        }
+        school_val = record.get("school")
+        if school_val is not None and isinstance(school_val, dict) and "__ref" in school_val:
+            school_record = _resolve_ref(store, school_val)
+            if school_record and isinstance(school_record, dict):
+                node["school"] = {
+                    "id": school_record.get("id") or school_record.get("__id"),
+                    "name": school_record.get("name") or "",
+                    "city": school_record.get("city"),
+                    "state": school_record.get("state"),
+                    "country": school_record.get("country"),
+                }
+        elif isinstance(school_val, dict):
+            node["school"] = school_val
+        return node
+
+    def _relay_rating_to_node(self, record: Mapping[str, Any]) -> Dict[str, Any]:
+        """Convert a Relay Rating record to the shape _parse_rating_node expects."""
+        return {
+            "date": record.get("date"),
+            "comment": record.get("comment") or "",
+            "quality": record.get("quality"),
+            "difficulty": record.get("difficulty"),
+            "tags": record.get("tags") or [],
+            "course": record.get("course") or record.get("courseName"),
+        }
+
+    def get_professor(self, professor_id: str) -> Professor:
+        """Fetch detailed information about a single professor.
+
+        Data is loaded from the professor page HTML (server-side rendered);
+        no separate API call is made.
+        """
+        store = self._fetch_relay_store_for_professor(professor_id)
+        record = get_professor_node(store, professor_id)
+        if record is None:
+            raise ParsingError(f"Professor record not found in __RELAY_STORE__ for id={professor_id!r}")
+        node = self._relay_professor_to_node(store, record)
         return self._parse_professor_node(node)
 
     def get_professor_ratings_page(
@@ -208,36 +270,36 @@ class RMPClient:
         cursor: Optional[str] = None,
         page_size: int = 20,
     ) -> ProfessorRatingsPage:
-        """Fetch a single page of ratings/comments for a professor."""
-        variables: Dict[str, Any] = {
-            "id": professor_id,
-            "first": page_size,
-            "after": cursor,
-        }
-        payload = {"operationName": "GetProfessorRatings", "variables": variables, "query": "..."}
-        data = self.raw_query(payload)
+        """Fetch a single page of ratings/comments for a professor.
 
-        try:
-            node: Mapping[str, Any] = data["data"]["node"]
-            ratings_conn: Mapping[str, Any] = node["ratings"]
-            edges: Iterable[Mapping[str, Any]] = ratings_conn["edges"]
-        except Exception as exc:  # noqa: BLE001
-            raise ParsingError(f"Unexpected ratings payload: {data!r}") from exc
+        Data is loaded from the professor page HTML (server-side rendered).
+        Pagination is applied in-memory over the ratings embedded in the page.
+        """
+        store = self._fetch_relay_store_for_professor(professor_id)
+        record = get_professor_node(store, professor_id)
+        if record is None:
+            raise ParsingError(f"Professor record not found in __RELAY_STORE__ for id={professor_id!r}")
 
-        professor = self._parse_professor_node(node)
+        professor = self._parse_professor_node(self._relay_professor_to_node(store, record))
+        rating_records = get_ratings_from_store(store, record)
+        if not rating_records:
+            rating_records = get_all_rating_records(store)
 
-        ratings: List[Rating] = []
-        for edge in edges:
-            rating_node = edge.get("node", {})
-            ratings.append(self._parse_rating_node(rating_node))
+        ratings_models: List[Rating] = []
+        for r in rating_records:
+            node = self._relay_rating_to_node(r)
+            ratings_models.append(self._parse_rating_node(node))
 
-        page_info = ratings_conn.get("pageInfo", {})
-        has_next = bool(page_info.get("hasNextPage", False))
-        next_cursor = page_info.get("endCursor")
+        # In-page pagination: cursor as offset index (or None for first page)
+        start = int(cursor) if cursor is not None else 0
+        start = max(0, start)
+        page_slice = ratings_models[start : start + page_size]
+        has_next = (start + page_size) < len(ratings_models)
+        next_cursor = str(start + page_size) if has_next else None
 
         return ProfessorRatingsPage(
             professor=professor,
-            ratings=ratings,
+            ratings=page_slice,
             has_next_page=has_next,
             next_cursor=next_cursor,
         )
