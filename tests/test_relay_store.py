@@ -71,6 +71,21 @@ class TestGetProfessorNode:
         assert node is not None
         assert node["name"] == "Bob"
 
+    def test_finds_teacher_by_legacy_id(self) -> None:
+        """RMP professor page uses __typename Teacher and legacyId (int) for URL id."""
+        store = {
+            "VGVhY2hlci0yODIzMDc2": {
+                "__typename": "Teacher",
+                "legacyId": 2823076,
+                "firstName": "Erin",
+                "lastName": "Meger",
+            },
+        }
+        node = get_professor_node(store, "2823076")
+        assert node is not None
+        assert node["firstName"] == "Erin"
+        assert node["lastName"] == "Meger"
+
     def test_returns_none_when_not_found(self) -> None:
         store = {
             "node:1": {"__typename": "School", "id": "1"},
@@ -141,6 +156,29 @@ class TestGetRatingsFromStore:
     def test_empty_when_edges_not_list(self) -> None:
         prof = {"__typename": "Professor", "ratings": {"edges": "not-a-list"}}
         assert get_ratings_from_store({}, prof) == []
+
+    def test_ratings_via_edges_refs_rmp_style(self) -> None:
+        """Real RMP store: ratings(first:5) is __ref, connection has edges.__refs."""
+        store = {
+            "Teacher-2823076": {
+                "__typename": "Teacher",
+                "legacyId": 2823076,
+                "ratings(first:5)": {"__ref": "conn:2823076:ratings"},
+            },
+            "conn:2823076:ratings": {
+                "__typename": "RatingConnection",
+                "edges": {"__refs": ["edge:0", "edge:1"]},
+            },
+            "edge:0": {"node": {"__ref": "Rating-1"}},
+            "edge:1": {"node": {"__ref": "Rating-2"}},
+            "Rating-1": {"__typename": "Rating", "comment": "First", "clarityRating": 1},
+            "Rating-2": {"__typename": "Rating", "comment": "Second", "clarityRating": 2},
+        }
+        prof = store["Teacher-2823076"]
+        ratings = get_ratings_from_store(store, prof)
+        assert len(ratings) == 2
+        assert ratings[0]["comment"] == "First"
+        assert ratings[1]["comment"] == "Second"
 
 
 class TestGetAllRatingRecords:

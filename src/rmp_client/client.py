@@ -26,7 +26,9 @@ from .relay_store import (
     get_ratings_from_store,
     get_school_node,
     get_school_ratings_from_store,
+    _is_record_ref,
     _resolve_ref,
+    _resolve_refs,
 )
 
 
@@ -56,15 +58,21 @@ def _school_record_to_location_dict(record: Mapping[str, Any]) -> Dict[str, Any]
 def _build_rating_distribution(
     raw: Any,
 ) -> Optional[Dict[int, RatingDistributionBucket]]:
-    """Convert raw counts (dict 1-5 -> count or list) to dict with count + percentage."""
+    """Convert raw counts (dict 1-5 or r1..r5 -> count, or list) to dict with count + percentage."""
     if raw is None:
         return None
     counts: Dict[int, int] = {}
     if isinstance(raw, dict):
-        for k, v in raw.items():
-            level = int(k) if isinstance(k, int) else (int(k) if isinstance(k, str) and k.isdigit() else None)
-            if level is not None and 1 <= level <= 5:
-                counts[level] = int(v) if v is not None else 0
+        # RMP uses r1, r2, r3, r4, r5 for rating distribution
+        if any(raw.get(f"r{i}") is not None for i in range(1, 6)):
+            for i in range(1, 6):
+                v = raw.get(f"r{i}")
+                counts[i] = int(v) if v is not None else 0
+        else:
+            for k, v in raw.items():
+                level = int(k) if isinstance(k, int) else (int(k) if isinstance(k, str) and k.isdigit() else None)
+                if level is not None and 1 <= level <= 5:
+                    counts[level] = int(v) if v is not None else 0
     elif isinstance(raw, list) and len(raw) >= 5:
         for i, v in enumerate(raw[:5], start=1):
             counts[i] = int(v) if v is not None else 0
@@ -268,16 +276,17 @@ class RMPClient:
             raise ParsingError(f"Failed to extract __RELAY_STORE__ from professor page: {exc}") from exc
 
     def _relay_professor_to_node(self, store: Dict[str, Any], record: Mapping[str, Any]) -> Dict[str, Any]:
-        """Convert a Relay Professor record to the shape _parse_professor_node expects."""
+        """Convert a Relay Professor/Teacher record to the shape _parse_professor_node expects."""
+        # RMP professor page uses avgRating, avgDifficulty, wouldTakeAgainPercent
         node: Dict[str, Any] = {
             "id": record.get("id") or record.get("__id") or record.get("legacyId"),
             "name": record.get("name") or " ".join(filter(None, [record.get("firstName"), record.get("lastName")])),
             "department": record.get("department"),
             "url": record.get("url"),
-            "overallRating": record.get("overallRating"),
+            "overallRating": record.get("avgRating") or record.get("overallRating"),
             "numRatings": record.get("numRatings"),
-            "percentTakeAgain": record.get("percentTakeAgain"),
-            "levelOfDifficulty": record.get("levelOfDifficulty"),
+            "percentTakeAgain": record.get("wouldTakeAgainPercent") or record.get("percentTakeAgain"),
+            "levelOfDifficulty": record.get("avgDifficulty") or record.get("levelOfDifficulty"),
             "tags": record.get("tags") or [],
         }
         school_val = record.get("school")
@@ -287,28 +296,45 @@ class RMPClient:
                 node["school"] = _school_record_to_location_dict(school_record)
         elif isinstance(school_val, dict):
             node["school"] = _school_record_to_location_dict(school_val)
-        # Rating distribution (1-5 -> count); we compute percentage when parsing
-        node["rating_distribution"] = record.get("ratingDistribution") or record.get("ratingsDistribution")
+        # Rating distribution: RMP stores as __ref to record with r1..r5
+        dist_raw = record.get("ratingsDistribution") or record.get("ratingDistribution")
+        if _is_record_ref(dist_raw):
+            dist_record = _resolve_ref(store, dist_raw)
+            node["rating_distribution"] = dist_record if isinstance(dist_record, dict) else dist_raw
+        else:
+            node["rating_distribution"] = dist_raw
+        # Tags: RMP uses teacherRatingTags as {"__refs": ["id1", ...]}; each ref is TeacherRatingTags with tagName
+        tags_refs = record.get("teacherRatingTags")
+        if isinstance(tags_refs, dict) and "__refs" in tags_refs:
+            ref_ids = tags_refs.get("__refs") or []
+            tag_records = _resolve_refs(store, ref_ids)
+            node["tags"] = [str(r.get("tagName", "")) for r in tag_records if r.get("tagName")]
+        elif not node["tags"]:
+            node["tags"] = record.get("tags") or []
         return node
 
     def _relay_rating_to_node(self, record: Mapping[str, Any]) -> Dict[str, Any]:
         """Convert a Relay Rating record to the shape _parse_rating_node expects."""
+        # RMP uses clarityRating (quality), difficultyRating, class (course), helpfulRating, thumbsUpTotal/thumbsDownTotal
         out: Dict[str, Any] = {
             "date": record.get("date"),
             "comment": record.get("comment") or "",
-            "quality": record.get("quality"),
-            "difficulty": record.get("difficulty"),
+            "quality": record.get("clarityRating") or record.get("quality"),
+            "difficulty": record.get("difficultyRating") or record.get("difficulty"),
             "tags": record.get("tags") or [],
-            "course": record.get("course") or record.get("courseName"),
+            "course": record.get("class") or record.get("course") or record.get("courseName"),
         }
-        # Details: for_credit, attendance, grade, textbook (camelCase in relay)
-        detail_keys = ("for_credit", "forCredit", "attendance", "grade", "textbook")
-        for key in detail_keys:
-            if key in record and record[key] is not None:
-                out[key] = record[key]
-        out["helpful"] = record.get("helpful")
-        out["thumbsUp"] = record.get("thumbsUp")
-        out["thumbsDown"] = record.get("thumbsDown")
+        # ratingTags is a single string "Tag1--Tag2--Tag3"
+        if isinstance(record.get("ratingTags"), str):
+            out["tags"] = [t.strip() for t in record["ratingTags"].split("--") if t.strip()]
+        # Details: RMP uses attendanceMandatory, textbookUse, isForCredit, grade
+        out["for_credit"] = record.get("isForCredit") if "isForCredit" in record else record.get("for_credit") or record.get("forCredit")
+        out["attendance"] = record.get("attendanceMandatory") or record.get("attendance")
+        out["grade"] = record.get("grade")
+        out["textbook"] = record.get("textbookUse") if "textbookUse" in record else record.get("textbook")
+        out["helpful"] = record.get("helpfulRating") or record.get("helpful")
+        out["thumbsUp"] = record.get("thumbsUpTotal") or record.get("thumbsUp")
+        out["thumbsDown"] = record.get("thumbsDownTotal") or record.get("thumbsDown")
         return out
 
     def get_professor(self, professor_id: str) -> Professor:
@@ -585,8 +611,10 @@ class RMPClient:
         )
 
     def _parse_rating_node(self, node: Mapping[str, Any]) -> Rating:
-        # Expect an ISO date string; we keep parsing lenient and push strictness into models.
+        # RMP sends "2026-03-03 21:20:35 +0000 UTC"; use date part only.
         date_str = node.get("date")
+        if isinstance(date_str, str) and " " in date_str:
+            date_str = date_str.split(" ")[0]
         try:
             rating_date = date.fromisoformat(date_str) if isinstance(date_str, str) else date.today()
         except ValueError:

@@ -77,24 +77,88 @@ def _record_id(record: Mapping[str, Any]) -> Optional[str]:
     return record.get("__id") or record.get("id")
 
 
+def _resolve_refs(store: Mapping[str, Any], ref_ids: List[str]) -> List[Dict[str, Any]]:
+    """Resolve a list of record IDs to a list of records. Skips missing/invalid."""
+    out: List[Dict[str, Any]] = []
+    for ref_id in ref_ids or []:
+        if not isinstance(ref_id, str):
+            continue
+        rec = store.get(ref_id)
+        if isinstance(rec, dict):
+            out.append(rec)
+    return out
+
+
 def get_professor_node(store: Dict[str, Any], professor_id: str) -> Optional[Dict[str, Any]]:
-    """Find the Professor record in a Relay store by legacy ID (URL slug)."""
+    """Find the Professor/Teacher record in a Relay store by legacy ID (URL slug)."""
     professor_id_str = str(professor_id)
     for record in store.values():
         if not isinstance(record, dict):
             continue
-        if record.get("__typename") != "Professor":
+        # RMP uses __typename "Teacher" on the professor page
+        if record.get("__typename") not in ("Professor", "Teacher"):
             continue
-        # Match by id, __id, or legacyId (URL slug used in /professor/{legacyId})
-        rid = record.get("id") or record.get("__id") or record.get("legacyId")
-        if rid is None:
-            continue
-        if str(rid) == professor_id_str:
+        # Match by legacyId (URL slug in /professor/{legacyId}) or id/__id
+        legacy = record.get("legacyId")
+        if legacy is not None and str(legacy) == professor_id_str:
             return record
-        # legacyId is often the slug in the URL
-        if record.get("legacyId") == professor_id_str:
+        rid = record.get("id") or record.get("__id")
+        if rid is not None and str(rid) == professor_id_str:
             return record
     return None
+
+
+def _get_ratings_connection_ref(professor_record: Dict[str, Any]) -> Optional[Dict[str, str]]:
+    """Get the ratings connection __ref from a professor/teacher record.
+
+    RMP uses keys like "ratings(first:5)" or "ratings"; value is {"__ref": "..."}.
+    """
+    # Prefer exact key then any key that starts with "ratings"
+    for key in ("ratings(first:5)", "ratings"):
+        val = professor_record.get(key)
+        if _is_record_ref(val):
+            return val
+    for key, val in professor_record.items():
+        if key.startswith("ratings") and _is_record_ref(val):
+            return val
+    return None
+
+
+def _edges_to_rating_records(
+    store: Dict[str, Any], edges_value: Any
+) -> List[Dict[str, Any]]:
+    """Turn connection edges (list or __refs) into list of Rating record dicts."""
+    ratings: List[Dict[str, Any]] = []
+    edge_refs: List[str] = []
+    if isinstance(edges_value, list):
+        for edge in edges_value:
+            if not isinstance(edge, dict):
+                continue
+            node = edge.get("node")
+            if _is_record_ref(node):
+                rec = _resolve_ref(store, node)
+                if rec and rec.get("__typename") in ("Rating", "ProfessorRating", "Review"):
+                    ratings.append(rec)
+            elif isinstance(node, dict):
+                ratings.append(node)
+        return ratings
+    # RMP uses edges: {"__refs": ["...edges:0", "...edges:1", ...]}
+    if isinstance(edges_value, dict) and "__refs" in edges_value:
+        edge_refs = edges_value.get("__refs") or []
+    if not edge_refs:
+        return ratings
+    for ref_id in edge_refs:
+        edge_record = store.get(ref_id) if isinstance(ref_id, str) else None
+        if not isinstance(edge_record, dict):
+            continue
+        node = edge_record.get("node")
+        if _is_record_ref(node):
+            rating_record = _resolve_ref(store, node)
+            if rating_record and rating_record.get("__typename") in ("Rating", "ProfessorRating", "Review"):
+                ratings.append(rating_record)
+        elif isinstance(node, dict):
+            ratings.append(node)
+    return ratings
 
 
 def get_ratings_from_store(
@@ -103,36 +167,22 @@ def get_ratings_from_store(
 ) -> List[Dict[str, Any]]:
     """Extract rating records from the store for this professor.
 
-    Handles Relay connection pattern: professor.ratings -> connection -> edges -> node (__ref).
+    Handles Relay connection pattern: professor.ratings -> connection (or __ref) -> edges (list or __refs) -> node (__ref).
     """
     ratings: List[Dict[str, Any]] = []
-    ratings_field = professor_record.get("ratings")
-    if ratings_field is None:
-        return ratings
-
-    # Connection record: { "edges": [ { "node": { "__ref": "..." } } ], ... }
-    conn = ratings_field if isinstance(ratings_field, dict) else None
-    if _is_record_ref(ratings_field):
-        conn = _resolve_ref(store, ratings_field)
+    conn: Optional[Dict[str, Any]] = None
+    ratings_ref = _get_ratings_connection_ref(professor_record)
+    if ratings_ref is not None:
+        conn = _resolve_ref(store, ratings_ref)
+    else:
+        # Inline connection: professor.ratings is the connection dict itself
+        ratings_field = professor_record.get("ratings")
+        if isinstance(ratings_field, dict) and "edges" in ratings_field:
+            conn = ratings_field
     if not conn:
         return ratings
-
-    edges = conn.get("edges")
-    if not isinstance(edges, list):
-        return ratings
-
-    for edge in edges:
-        if not isinstance(edge, dict):
-            continue
-        node = edge.get("node")
-        if _is_record_ref(node):
-            rating_record = _resolve_ref(store, node)
-            if rating_record and rating_record.get("__typename") in ("Rating", "ProfessorRating", "Review"):
-                ratings.append(rating_record)
-        elif isinstance(node, dict):
-            ratings.append(node)
-
-    return ratings
+    edges_value = conn.get("edges")
+    return _edges_to_rating_records(store, edges_value)
 
 
 def get_all_rating_records(store: Dict[str, Any]) -> List[Dict[str, Any]]:
