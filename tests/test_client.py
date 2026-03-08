@@ -71,7 +71,7 @@ class TestRMPClientGetProfessor:
         self, httpx_mock: pytest_httpx.HTTPXMock
     ) -> None:
         config = RMPClientConfig(
-            professor_page_base="https://www.ratemyprofessors.com",
+            professors_page_url="https://www.ratemyprofessors.com/professor/",
             rate_limit_per_minute=1000,
         )
         store = _make_professor_store("abc123", name="Jane Doe", department="Math")
@@ -92,7 +92,7 @@ class TestRMPClientGetProfessor:
         self, httpx_mock: pytest_httpx.HTTPXMock
     ) -> None:
         config = RMPClientConfig(
-            professor_page_base="https://www.ratemyprofessors.com",
+            professors_page_url="https://www.ratemyprofessors.com/professor/",
             rate_limit_per_minute=1000,
         )
         store = _make_professor_store("p1")
@@ -106,15 +106,13 @@ class TestRMPClientGetProfessor:
             prof = client.get_professor("p1")
         assert prof.school is not None
         assert prof.school.name == "Test University"
-        assert prof.school.city == "City"
-        assert prof.school.state == "ST"
-        assert prof.school.country == "USA"
+        assert prof.school.location == "City, ST, USA"
 
     def test_raises_parsing_error_when_professor_not_in_store(
         self, httpx_mock: pytest_httpx.HTTPXMock
     ) -> None:
         config = RMPClientConfig(
-            professor_page_base="https://www.ratemyprofessors.com",
+            professors_page_url="https://www.ratemyprofessors.com/professor/",
             rate_limit_per_minute=1000,
         )
         store = {"client:root": {"__id": "client:root"}}  # no Professor
@@ -131,7 +129,7 @@ class TestRMPClientGetProfessor:
         self, httpx_mock: pytest_httpx.HTTPXMock
     ) -> None:
         config = RMPClientConfig(
-            professor_page_base="https://www.ratemyprofessors.com",
+            professors_page_url="https://www.ratemyprofessors.com/professor/",
             rate_limit_per_minute=1000,
         )
         httpx_mock.add_response(
@@ -150,7 +148,7 @@ class TestRMPClientGetProfessorRatingsPage:
         self, httpx_mock: pytest_httpx.HTTPXMock
     ) -> None:
         config = RMPClientConfig(
-            professor_page_base="https://www.ratemyprofessors.com",
+            professors_page_url="https://www.ratemyprofessors.com/professor/",
             rate_limit_per_minute=1000,
         )
         store = _make_professor_store("p1", name="Dr. Smith")
@@ -174,7 +172,7 @@ class TestRMPClientGetProfessorRatingsPage:
         self, httpx_mock: pytest_httpx.HTTPXMock
     ) -> None:
         config = RMPClientConfig(
-            professor_page_base="https://www.ratemyprofessors.com",
+            professors_page_url="https://www.ratemyprofessors.com/professor/",
             rate_limit_per_minute=1000,
         )
         store = _make_professor_store("p1")
@@ -201,10 +199,10 @@ class TestRMPClientGetProfessorRatingsPage:
 
 
 class TestRMPClientProfessorPageUrl:
-    """_professor_page_url uses config.professor_page_base."""
+    """_professor_page_url uses config.professors_page_url."""
 
     def test_builds_correct_url(self) -> None:
-        config = RMPClientConfig(professor_page_base="https://site.com")
+        config = RMPClientConfig(professors_page_url="https://site.com/professor/")
         client = RMPClient(config=config)
         url = client._professor_page_url("legacy-123")
         assert url == "https://site.com/professor/legacy-123"
