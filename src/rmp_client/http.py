@@ -1,7 +1,9 @@
+"""HTTP client with retries, rate limiting, and error mapping."""
+
 from __future__ import annotations
 
-from typing import Any, Dict, Mapping, Optional
 import json
+from typing import Any, Dict, Mapping, Optional
 
 import httpx
 
@@ -16,7 +18,6 @@ class HttpClient:
     def __init__(self, config: RMPClientConfig) -> None:
         self._config = config
         self._client = httpx.Client(timeout=config.timeout_seconds)
-        # Simple per-process rate limiter
         self._bucket = TokenBucket(
             capacity=config.rate_limit_per_minute,
             refill_per_second=config.rate_limit_per_minute / 60.0,
@@ -39,8 +40,12 @@ class HttpClient:
         *,
         headers: Optional[Mapping[str, str]] = None,
     ) -> Dict[str, Any]:
-        """POST JSON to `base_url + path` with retries and rate limiting."""
-        url = self._config.base_url if path == "" else f"{self._config.base_url.rstrip('/')}/{path.lstrip('/')}"
+        """POST JSON to ``base_url + path`` with retries and rate limiting."""
+        url = (
+            self._config.base_url
+            if path == ""
+            else f"{self._config.base_url.rstrip('/')}/{path.lstrip('/')}"
+        )
         attempt = 0
         last_exc: Optional[Exception] = None
 
@@ -63,53 +68,23 @@ class HttpClient:
                 try:
                     data = response.json()
                 except json.JSONDecodeError as exc:
-                    raise HttpError(response.status_code, str(response.url), body=response.text) from exc
-                # If GraphQL-like, surface errors if present
+                    raise HttpError(
+                        response.status_code, str(response.url), body=response.text
+                    ) from exc
                 if isinstance(data, dict) and "errors" in data:
-                    raise RMPAPIError("RMP API returned errors", details=data["errors"])
+                    raise RMPAPIError(
+                        "RMP API returned errors", details=data["errors"]
+                    )
                 return data  # type: ignore[return-value]
 
-            # Non-2xx
-            err = HttpError(response.status_code, str(response.url), body=response.text)
+            err = HttpError(
+                response.status_code, str(response.url), body=response.text
+            )
             last_exc = err
-            # Retry on 5xx, fail fast on 4xx
-            if 500 <= response.status_code < 600 and attempt <= self._config.max_retries:
-                continue
-            raise err
-
-        assert last_exc is not None
-        raise RetryError(last_exc)
-
-    def get_html(
-        self,
-        url: str,
-        *,
-        headers: Optional[Mapping[str, str]] = None,
-    ) -> str:
-        """GET URL and return response text with retries and rate limiting."""
-        attempt = 0
-        last_exc: Optional[Exception] = None
-
-        while attempt <= self._config.max_retries:
-            attempt += 1
-            self._bucket.consume()
-            try:
-                response = self._client.get(
-                    url,
-                    headers=self._headers(headers),
-                )
-            except httpx.HTTPError as exc:
-                last_exc = exc
-                if attempt > self._config.max_retries:
-                    raise RetryError(exc)
-                continue
-
-            if 200 <= response.status_code < 300:
-                return response.text
-
-            err = HttpError(response.status_code, str(response.url), body=response.text)
-            last_exc = err
-            if 500 <= response.status_code < 600 and attempt <= self._config.max_retries:
+            if (
+                500 <= response.status_code < 600
+                and attempt <= self._config.max_retries
+            ):
                 continue
             raise err
 
@@ -131,4 +106,3 @@ class HttpClientContext:
     def __exit__(self, *_: Any) -> None:
         assert self._client is not None
         self._client.close()
-
