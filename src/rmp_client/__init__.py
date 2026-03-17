@@ -1,6 +1,17 @@
+"""RateMyProfessors API client -- public entry point."""
+
 from .client import RMPClient
 from .config import RMPClientConfig
-from . import errors as _errors
+from .errors import (
+    ConfigurationError,
+    HttpError,
+    ParsingError,
+    RateLimitError,
+    RetryError,
+    RMPAPIError,
+    RMPError,
+)
+from .rate_limit import TokenBucket
 from .extras import (
     SentimentResult,
     analyze_sentiment,
@@ -10,12 +21,17 @@ from .extras import (
     clean_course_label,
 )
 
-RMPError = _errors.RMPError
-
 __all__ = [
     "RMPClient",
     "RMPClientConfig",
     "RMPError",
+    "ConfigurationError",
+    "HttpError",
+    "ParsingError",
+    "RateLimitError",
+    "RetryError",
+    "RMPAPIError",
+    "TokenBucket",
     "SentimentResult",
     "analyze_sentiment",
     "is_valid_comment",
@@ -23,4 +39,3 @@ __all__ = [
     "build_course_mapping",
     "clean_course_label",
 ]
-

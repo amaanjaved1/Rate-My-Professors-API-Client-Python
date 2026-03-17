@@ -1,11 +1,13 @@
-# RateMyProfessors API Client
+# RateMyProfessors API Client (Python)
 
-Typed, retrying, rate-limited unofficial client for RateMyProfessors, with built-in
-helpers for ingestion workflows (sentiment, dedupe, course-code normalization).
+A typed, retrying, rate-limited **unofficial** client for [RateMyProfessors](https://www.ratemyprofessors.com).
 
-> Note: This library is **unofficial** and may break if RMP changes their internal API.
-> This library has been made open-source so that if/when there are any changes,
-> someone is able to take note of these changes and help to contribute an update.
+> **Disclaimer:** This library is unofficial and may break if RMP changes their internal API. Use responsibly and respect rate limits.
+
+## Requirements
+
+- **Python 3.10** or later
+- Works with type checkers (Pydantic models, fully typed API)
 
 ## Installation
 
@@ -13,276 +15,98 @@ helpers for ingestion workflows (sentiment, dedupe, course-code normalization).
 pip install ratemyprofessors-client
 ```
 
-## Quickstart
+## Available Functions
 
-**Professor by ID** (data from professor page HTML):
+Create a client and call any of these methods. See the [full docs](docs/) for parameters, return types, and examples.
 
 ```python
 from rmp_client import RMPClient
 
 with RMPClient() as client:
-    professor = client.get_professor("2823076")  # legacy ID from URL
-    print(professor.name, professor.overall_rating, professor.num_ratings, professor.school.name)
+    ...
 ```
 
-**School by ID** (data from school page HTML):
+**Schools**
+
+- `search_schools(query)` — Search schools by name. Returns paginated results.
+- `get_school(school_id)` — Get a single school by its numeric ID.
+- `get_compare_schools(school_id_1, school_id_2)` — Fetch two schools side by side.
+- `get_school_ratings_page(school_id)` — Get one page of school ratings (cached after first fetch).
+- `iter_school_ratings(school_id)` — Iterator over all ratings for a school.
+
+**Professors**
+
+- `search_professors(query)` — Search professors by name. Returns paginated results.
+- `list_professors_for_school(school_id)` — List professors at a given school.
+- `iter_professors_for_school(school_id)` — Iterator over all professors at a school.
+- `get_professor(professor_id)` — Get a single professor by their numeric ID.
+- `get_professor_ratings_page(professor_id)` — Get one page of professor ratings (cached after first fetch).
+- `iter_professor_ratings(professor_id)` — Iterator over all ratings for a professor.
+
+**Low-level**
+
+- `raw_query(payload)` — Send a raw GraphQL payload to the RMP endpoint.
+
+**Lifecycle**
+
+- `close()` — Close the client and clear caches. Safe to call multiple times.
+
+## Errors and What They Mean
+
+All errors extend `RMPError`. Catch and narrow with `isinstance`:
+
+- **`HttpError`** — The server returned a non-2xx status code (e.g. 404, 500).
+- **`ParsingError`** — The response couldn't be parsed (e.g. professor/school not found).
+- **`RateLimitError`** — The client's local rate limiter blocked the request.
+- **`RetryError`** — The request failed after all retry attempts. Contains the last underlying error.
+- **`RMPAPIError`** — The GraphQL API returned an `errors` array in the response.
+- **`ConfigurationError`** — Invalid client configuration.
 
 ```python
+from rmp_client import RMPClient, HttpError, ParsingError
+
 with RMPClient() as client:
-    school = client.get_school("1466")
-    print(school.name, school.location, school.overall_quality, school.num_ratings)
+    try:
+        prof = client.get_professor("2823076")
+    except ParsingError:
+        print("Professor not found")
+    except HttpError as e:
+        print(f"HTTP error: {e.status_code}")
 ```
 
-**Search professors or schools** (data from search page HTML):
+## Types
+
+All methods return Pydantic models. Import any of these:
 
 ```python
-with RMPClient() as client:
-    profs = client.search_professors("test")
-    print(profs.total, profs.has_next_page)
-    for p in profs.professors[:5]:
-        print(p.name, p.school.name if p.school else "")
-
-    schools = client.search_schools("queens")
-    for s in schools.schools:
-        print(s.name, s.location)
+from rmp_client.models import (
+    School,
+    Professor,
+    Rating,
+    SchoolRating,
+    ProfessorSearchResult,
+    SchoolSearchResult,
+    ProfessorRatingsPage,
+    SchoolRatingsPage,
+    CompareSchoolsResult,
+)
 ```
 
-**Compare two schools** (data from compare page HTML):
-
-```python
-with RMPClient() as client:
-    result = client.get_compare_schools("1466", "1491")
-    print(result.school_1.name, result.school_2.name)
-```
-
-**Iterate professor ratings** (first page from HTML, further pages via GraphQL):
-
-```python
-from datetime import date
-from rmp_client import RMPClient
-
-with RMPClient() as client:
-    for rating in client.iter_professor_ratings("2823076", since=date(2024, 1, 1)):
-        print(rating.date, rating.quality, rating.comment)
-```
-
-<<<<<<< Updated upstream
-**Verify the client** (run the script to hit the live site and print sample data):
-
-```bash
-pip install -e .
-python scripts/verify_client.py              # up to 3 pages of ratings per section (default)
-python scripts/verify_client.py --max-pages 10 --page-size 20  # scrape more pages
-```
-
-**Scrape all ratings** for a professor or school: the client fetches the first page from HTML and subsequent pages via the site’s GraphQL API. Use the iterators to get every rating:
-
-```python
-with RMPClient() as client:
-    for rating in client.iter_professor_ratings("2823076"):
-        print(rating.date, rating.comment)
-    for rating in client.iter_school_ratings("1466"):
-        print(rating.date, rating.comment)
-```
-
-## How it works
-
-### Package architecture
-
-```mermaid
-flowchart TB
-    subgraph Your code
-        User["Your script / app"]
-    end
-
-    subgraph rmp_client [rmp_client package]
-        Client["RMPClient\n(client.py)"]
-        Config["RMPClientConfig\n(config.py)"]
-        Models["Models\n(School, Professor, Rating)\n(models.py)"]
-        Errors["RMPError hierarchy\n(errors.py)"]
-    end
-
-    subgraph HTTP layer
-        HttpCtx["HttpClientContext\n(http.py)"]
-        Http["HttpClient\n(retries, headers)"]
-        Bucket["TokenBucket\n(rate_limit.py)"]
-    end
-
-    subgraph External
-        RMP["RMP pages\n(ratemyprofessors.com)"]
-    end
-
-    User --> Client
-    Client --> Config
-    Client --> HttpCtx
-    HttpCtx --> Http
-    Http --> Bucket
-    Http --> RMP
-    Client --> Models
-    Client --> Errors
-```
-
-### Request flow
-
-Professor, school, compare-schools, and search endpoints **fetch the relevant RMP page HTML** (GET), extract `window.__RELAY_STORE__` from the response, and parse it into `Professor`, `School`, `Rating`, or search result lists.
-
-**Ratings pagination (Relay):** The first page of professor or school ratings comes from the same HTML (Relay store). The store’s connection includes:
-
-- **`pageInfo.endCursor`** — opaque cursor for “start after this item”
-- **`pageInfo.hasNextPage`** — whether more ratings exist
-
-The client then requests the next page by POSTing to `/graphql` with the same query and variables:
-
-- `id` — Relay node id (base64 of `Teacher-{legacyId}` or `School-{legacyId}`)
-- `first` — page size (e.g. 20)
-- `after` — `pageInfo.endCursor` from the previous response
-
-Loop until `hasNextPage` is false. The cursor is typically base64 for an internal offset (e.g. `YXJyYXljb25uZWN0aW9uOjQ=` decodes to `arrayconnection:4`, meaning “after item 4”). RMP does not rotate or expire these cursors, so you can paginate with plain HTTP requests without a browser. This client sends the **full GraphQL query** in each request; if the site ever required persisted queries (e.g. `doc_id` only), you’d capture the real request from the browser and reuse that format.
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant RMPClient
-    participant HttpClient
-    participant TokenBucket
-    participant httpx
-    participant RMP
-
-    User->>RMPClient: e.g. get_professor(id), get_school(id), search_professors(q), get_compare_schools(id1, id2)
-    RMPClient->>HttpClient: get_html(url)
-    HttpClient->>TokenBucket: consume()
-    TokenBucket-->>HttpClient: (blocks until token available)
-    HttpClient->>httpx: GET page URL
-    httpx->>RMP: HTTPS request
-    RMP-->>httpx: HTML (with __RELAY_STORE__)
-    httpx-->>HttpClient: response
-    HttpClient-->>RMPClient: HTML text
-    RMPClient->>RMPClient: Extract and parse __RELAY_STORE__, resolve refs
-    RMPClient->>RMPClient: Map to Professor / School / Rating / SearchResult
-    RMPClient-->>User: Professor, School, list, or CompareSchoolsResult
-```
-
-### Data models
-
-```mermaid
-erDiagram
-    School ||--o{ Professor : "has"
-    Professor ||--o{ Rating : "has"
-
-    School {
-        string id
-        string name
-        string location
-        float overall_quality
-        int num_ratings
-    }
-
-    Professor {
-        string id
-        string name
-        string department
-        float overall_rating
-        int num_ratings
-        School school
-    }
-
-    Rating {
-        date date
-        string comment
-        float quality
-        float difficulty
-        string course_raw
-    }
-
-    ProfessorSearchResult {
-        Professor[] professors
-        int total
-        bool has_next_page
-        string next_cursor
-    }
-
-    SchoolSearchResult {
-        School[] schools
-        int total
-        bool has_next_page
-        string next_cursor
-    }
-
-    CompareSchoolsResult {
-        School school_1
-        School school_2
-    }
-
-    ProfessorRatingsPage {
-        Professor professor
-        Rating[] ratings
-        bool has_next_page
-        string next_cursor
-    }
-```
-
-### Extras and ingestion pipeline
-
-```mermaid
-flowchart LR
-    subgraph RMPClient
-        iter_professors["iter_professors_for_school"]
-        iter_ratings["iter_professor_ratings"]
-    end
-
-    subgraph extras [rmp_client.extras]
-        dedupe["dedupe\n(normalize_comment,\n is_valid_comment)"]
-        sentiment["sentiment\n(analyze_sentiment)"]
-        course_codes["course_codes\n(build_course_mapping)"]
-    end
-
-    subgraph Your pipeline [Your pipeline e.g. ingest_supabase]
-        filter["Filter comments"]
-        store["Supabase / DB"]
-    end
-
-    iter_professors --> iter_ratings
-    iter_ratings --> filter
-    filter --> dedupe
-    dedupe --> sentiment
-    iter_ratings --> course_codes
-    sentiment --> store
-    course_codes --> store
-```
-
-### CI/CD (publish to PyPI)
-
-```mermaid
-flowchart LR
-    subgraph On any push
-        T[Run tests\npytest]
-    end
-
-    subgraph On main push
-        B[Build wheel + sdist]
-        TestPyPI[Publish to TestPyPI]
-    end
-
-    subgraph On release published
-        PyPI[Publish to PyPI]
-    end
-
-    T --> B
-    B --> TestPyPI
-    B --> PyPI
-```
+- **`School`** — ID, name, location, overall quality, category ratings (reputation, safety, etc.)
+- **`Professor`** — ID, name, department, school, overall rating, difficulty, percent take again
+- **`Rating`** — Date, comment, quality, difficulty, tags, course, thumbs up/down
+- **`SchoolRating`** — Date, comment, overall score, category ratings, thumbs up/down
+- **`ProfessorSearchResult`** / **`SchoolSearchResult`** — Paginated list with `has_next_page` and `next_cursor`
+- **`ProfessorRatingsPage`** / **`SchoolRatingsPage`** — One page of ratings with cursor pagination
+- **`CompareSchoolsResult`** — A pair of schools
 
 ## Extras
-=======
-## Helpers
->>>>>>> Stashed changes
 
-The package includes helpers for ingestion pipelines; import them from the main module:
+Optional helpers for data pipelines:
 
 ```python
 from rmp_client import (
-    RMPClient,
-    analyze_sentiment,   # sentiment score/label (uses TextBlob)
+    analyze_sentiment,
     normalize_comment,
     is_valid_comment,
     build_course_mapping,
@@ -290,23 +114,8 @@ from rmp_client import (
 )
 ```
 
-- **Sentiment:** `analyze_sentiment(text)` returns a score and label (e.g. positive, neutral).
-- **Dedupe:** `normalize_comment(text)` and `is_valid_comment(text, min_len=10)` for filtering/normalizing comments.
-- **Course codes:** `clean_course_label(raw)` and `build_course_mapping(scraped_labels, valid_courses)` for mapping RMP course strings to your catalog.
-
-See `docs/` and `examples/` for more. The repo includes `examples/ingest_supabase.py` for a Supabase-backed scraping pipeline.
-
-## Publishing to PyPI
-
-This project follows the [Python Packaging User Guide](https://packaging.python.org/en/latest/overview/) and uses [PyPI Trusted Publishing](https://docs.pypi.org/trusted-publishers/) with GitHub Actions.
-
-1. **One-time setup**: On [pypi.org](https://pypi.org/manage/account/publishing/) add a trusted publisher for this repo (workflow `publish-to-pypi.yml`, environment `pypi`). Create a `pypi` environment in the repo and enable “Required reviewers” for production releases.
-2. **Release**: Create and push a tag (e.g. `v0.1.0`). The workflow builds both a [wheel and an sdist](https://packaging.python.org/en/latest/overview/#python-binary-distributions) and publishes to PyPI. Any push builds and publishes to TestPyPI (use the `testpypi` environment).
-
-Local build (no publish):
-
-```bash
-pip install build
-python -m build
-# Outputs in dist/: .whl (wheel) and .tar.gz (sdist)
-```
+- `normalize_comment(text)` — Normalize text for deduplication (lowercase, collapse whitespace)
+- `is_valid_comment(text, min_len=10)` — Check if a comment is non-empty and meets a minimum length
+- `clean_course_label(raw)` — Clean scraped course labels (remove counts, normalize whitespace)
+- `build_course_mapping(scraped, valid)` — Map scraped labels to known course codes
+- `analyze_sentiment(text)` — Compute sentiment label from text (uses TextBlob)

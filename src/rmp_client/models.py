@@ -1,3 +1,9 @@
+"""Data models for RateMyProfessors API responses.
+
+All fields use snake_case. Numeric IDs are the legacy integer IDs visible
+in RMP URLs; global Relay IDs are used internally only.
+"""
+
 from __future__ import annotations
 
 from datetime import date
@@ -7,12 +13,15 @@ from pydantic import BaseModel
 
 
 class School(BaseModel):
-    """A school on the RateMyProfessors website."""
+    """A school (university or college).
+
+    Category fields (reputation, safety, etc.) are populated by ``get_school()``
+    but may be absent on search results where only basic data is returned.
+    """
+
     id: str
     name: str
-    # Single location string (e.g. "Kingston, ON")
     location: Optional[str] = None
-    # From school page: overall quality and category ratings (out of 5)
     overall_quality: Optional[float] = None
     num_ratings: Optional[int] = None
     reputation: Optional[float] = None
@@ -20,7 +29,7 @@ class School(BaseModel):
     happiness: Optional[float] = None
     facilities: Optional[float] = None
     social: Optional[float] = None
-    location_rating: Optional[float] = None  # "Location" category score out of 5
+    location_rating: Optional[float] = None
     clubs: Optional[float] = None
     opportunities: Optional[float] = None
     internet: Optional[float] = None
@@ -28,7 +37,12 @@ class School(BaseModel):
 
 
 class Professor(BaseModel):
-    """A professor on the RateMyProfessors website."""
+    """A professor (teacher).
+
+    ``tags`` and ``rating_distribution`` are always empty/null in the current
+    GraphQL API responses; kept for forward compatibility.
+    """
+
     id: str
     name: str
     department: Optional[str] = None
@@ -39,11 +53,22 @@ class Professor(BaseModel):
     percent_take_again: Optional[float] = None
     level_of_difficulty: Optional[float] = None
     tags: List[str] = []
-    # Rating distribution: key = level 1-5 (Awful=1 .. Awesome=5), value = {number of ratings, percentage of total ratings}
     rating_distribution: Optional[Dict[int, RatingDistributionBucket]] = None
 
+
+class RatingDistributionBucket(BaseModel):
+    """One bucket in a professor's star-rating distribution."""
+
+    count: int
+    percentage: float
+
+
 class Rating(BaseModel):
-    """A single professor rating/review."""
+    """A single professor rating (review).
+
+    ``quality`` maps to RMP's clarity/helpful rating; ``details`` may contain
+    for_credit, attendance, grade, textbook when the API returns them.
+    """
 
     date: date
     comment: str
@@ -51,20 +76,28 @@ class Rating(BaseModel):
     difficulty: Optional[float] = None
     tags: List[str] = []
     course_raw: Optional[str] = None
-    # Extra metadata: for_credit, attendance, grade, textbook, etc. Keys lowercase.
     details: Optional[Dict[str, Any]] = None
-    helpful: Optional[int] = None
     thumbs_up: Optional[int] = None
     thumbs_down: Optional[int] = None
 
-class RatingDistributionBucket(BaseModel):
-    """The number of ratings and the percentage of ratings for a given rating level - 1 (lowest) to 5 (highest)."""
 
-    count: int
-    percentage: float
+class SchoolRating(BaseModel):
+    """A single school rating (review).
+
+    ``overall`` is computed as the average of all category scores.
+    ``category_ratings`` maps category name to score.
+    """
+
+    date: date
+    comment: str
+    overall: Optional[float] = None
+    category_ratings: Optional[Dict[str, float]] = None
+    thumbs_up: Optional[int] = None
+    thumbs_down: Optional[int] = None
+
 
 class ProfessorRatingsPage(BaseModel):
-    """A page of ratings for a professor."""
+    """One page of professor ratings with cursor pagination."""
 
     professor: Professor
     ratings: List[Rating]
@@ -73,55 +106,36 @@ class ProfessorRatingsPage(BaseModel):
 
 
 class ProfessorSearchResult(BaseModel):
-    """A page of search results for professors."""
+    """Paginated result from professor search or listing by school."""
 
     professors: List[Professor]
     total: Optional[int] = None
-    page: int
     page_size: int
     has_next_page: bool
-    next_cursor: Optional[str] = None  # from relay pageInfo.endCursor for next page
+    next_cursor: Optional[str] = None
 
 
 class SchoolSearchResult(BaseModel):
-    """A page of search results for schools."""
+    """Paginated result from school search."""
 
     schools: List[School]
     total: Optional[int] = None
-    page: int
     page_size: int
     has_next_page: bool
-    next_cursor: Optional[str] = None  # from relay pageInfo.endCursor for next page
+    next_cursor: Optional[str] = None
 
 
 class CompareSchoolsResult(BaseModel):
-    """Result of comparing two schools (from /compare/schools/id1/id2)."""
+    """Result of comparing two schools."""
 
     school_1: School
     school_2: School
 
 
-class SchoolRating(BaseModel):
-    """A single rating/review on a school page.
-
-    Each rating has an overall score (out of 5), optional category bars (out of 5),
-    and optional thumbs/helpful counts.
-    """
-
-    date: date
-    comment: str
-    overall: Optional[float] = None
-    # Category bars (out of 5): reputation, location, opportunities, facilities,
-    # internet, food, clubs, social, happiness, safety. Keys lowercase.
-    category_ratings: Optional[Dict[str, float]] = None
-    helpful: Optional[int] = None
-    thumbs_up: Optional[int] = None
-    thumbs_down: Optional[int] = None
-
-
 class SchoolRatingsPage(BaseModel):
+    """One page of school ratings with cursor pagination."""
+
     school: School
     ratings: List[SchoolRating]
     has_next_page: bool
     next_cursor: Optional[str] = None
-

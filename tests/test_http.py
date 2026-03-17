@@ -1,4 +1,4 @@
-"""Tests for HttpClient (get_html, post_json) with mocked HTTP."""
+"""Tests for HttpClient (post_json) with mocked HTTP."""
 
 from __future__ import annotations
 
@@ -10,50 +10,6 @@ import pytest_httpx
 from rmp_client.config import RMPClientConfig
 from rmp_client.errors import HttpError, RMPAPIError, RetryError
 from rmp_client.http import HttpClient
-
-
-class TestHttpClientGetHtml:
-    """get_html with pytest-httpx."""
-
-    def test_returns_text_on_200(self, httpx_mock: pytest_httpx.HTTPXMock) -> None:
-        config = RMPClientConfig(rate_limit_per_minute=1000)
-        httpx_mock.add_response(url="https://example.com/page", text="<html>Hello</html>")
-        client = HttpClient(config)
-        try:
-            result = client.get_html("https://example.com/page")
-            assert result == "<html>Hello</html>"
-        finally:
-            client.close()
-
-    def test_raises_http_error_on_404(self, httpx_mock: pytest_httpx.HTTPXMock) -> None:
-        config = RMPClientConfig(rate_limit_per_minute=1000)
-        httpx_mock.add_response(
-            url="https://example.com/missing",
-            status_code=404,
-            text="Not Found",
-        )
-        client = HttpClient(config)
-        try:
-            with pytest.raises(HttpError) as exc_info:
-                client.get_html("https://example.com/missing")
-            assert exc_info.value.status_code == 404
-            assert "Not Found" in (exc_info.value.body or "")
-        finally:
-            client.close()
-
-    def test_sends_default_headers(self, httpx_mock: pytest_httpx.HTTPXMock) -> None:
-        config = RMPClientConfig(rate_limit_per_minute=1000)
-        httpx_mock.add_response(url="https://example.com/", text="ok")
-        client = HttpClient(config)
-        try:
-            client.get_html("https://example.com/")
-            requests = httpx_mock.get_requests()
-            assert len(requests) >= 1
-            request = requests[0]
-            assert "User-Agent" in request.headers
-            assert "Accept-Language" in request.headers
-        finally:
-            client.close()
 
 
 class TestHttpClientPostJson:
@@ -120,5 +76,19 @@ class TestHttpClientPostJson:
         try:
             result = client.post_json("", {})
             assert result == {"data": "ok"}
+        finally:
+            client.close()
+
+    def test_sends_default_headers(self, httpx_mock: pytest_httpx.HTTPXMock) -> None:
+        config = RMPClientConfig(rate_limit_per_minute=1000)
+        httpx_mock.add_response(url=config.base_url, json={"data": {}})
+        client = HttpClient(config)
+        try:
+            client.post_json("", {"query": "..."})
+            requests = httpx_mock.get_requests()
+            assert len(requests) >= 1
+            request = requests[0]
+            assert "User-Agent" in request.headers
+            assert "Accept-Language" in request.headers
         finally:
             client.close()
