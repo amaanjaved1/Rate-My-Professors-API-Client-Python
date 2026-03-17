@@ -67,6 +67,7 @@ query SchoolRatingsListQuery($count: Int!, $id: ID!, $cursor: String) {
   node(id: $id) {
     ... on School {
       id
+      legacyId
       name
       city
       state

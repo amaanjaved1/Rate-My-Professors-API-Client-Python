@@ -197,7 +197,7 @@ class RMPClient:
         """Search professors by name (TeacherSearchResultsPageQuery)."""
         query_var: Dict[str, Any] = {"text": query}
         if school_id is not None:
-            query_var["schoolID"] = school_id
+            query_var["schoolID"] = _school_node_id(school_id)
 
         data = self.raw_query({
             "operationName": "TeacherSearchResultsPageQuery",
@@ -250,7 +250,7 @@ class RMPClient:
     ) -> ProfessorSearchResult:
         """List professors at a school. Wrapper around :meth:`search_professors`."""
         return self.search_professors(
-            query=query or "",
+            query=query if query else " ",
             school_id=str(school_id),
             page_size=page_size,
             cursor=cursor,
