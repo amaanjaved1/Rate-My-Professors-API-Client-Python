@@ -13,7 +13,7 @@ from datetime import date
 from typing import Any, Dict, Iterator, List, Mapping, Optional, Tuple
 
 from .config import RMPClientConfig
-from .errors import ParsingError
+from .errors import HttpError, ParsingError, RetryError, RMPAPIError
 from .http import HttpClient, HttpClientContext
 from .models import (
     CompareSchoolsResult,
@@ -351,9 +351,12 @@ class RMPClient:
         after = first.next_cursor if first.has_next_page else None
 
         while after is not None:
-            nxt = self._fetch_professor_ratings_page(
-                professor_id, after=after, first=100, course_filter=course_filter
-            )
+            try:
+                nxt = self._fetch_professor_ratings_page(
+                    professor_id, after=after, first=100, course_filter=course_filter
+                )
+            except (RMPAPIError, HttpError, RetryError):
+                break
             all_ratings.extend(nxt.ratings)
             after = nxt.next_cursor if nxt.has_next_page else None
 
@@ -459,7 +462,10 @@ class RMPClient:
         after = first.next_cursor if first.has_next_page else None
 
         while after is not None:
-            nxt = self._fetch_school_ratings_page(school_id, after=after, first=100)
+            try:
+                nxt = self._fetch_school_ratings_page(school_id, after=after, first=100)
+            except (RMPAPIError, HttpError, RetryError):
+                break
             all_ratings.extend(nxt.ratings)
             after = nxt.next_cursor if nxt.has_next_page else None
 
