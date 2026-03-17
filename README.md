@@ -17,7 +17,7 @@ pip install ratemyprofessors-client
 
 ## Available Functions
 
-Create a client and call any of these methods. See the [full docs](docs/) for parameters, return types, and examples.
+Create a client and call any of these methods. See the [full docs](https://amaanjaved1.github.io/Rate-My-Professors-API-Client-Python/) for parameters, return types, and examples.
 
 ```python
 from rmp_client import RMPClient

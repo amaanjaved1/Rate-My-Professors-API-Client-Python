@@ -13,7 +13,7 @@ from datetime import date
 from typing import Any, Dict, Iterator, List, Mapping, Optional, Tuple
 
 from .config import RMPClientConfig
-from .errors import ParsingError
+from .errors import HttpError, ParsingError, RetryError, RMPAPIError
 from .http import HttpClient, HttpClientContext
 from .models import (
     CompareSchoolsResult,
@@ -197,7 +197,7 @@ class RMPClient:
         """Search professors by name (TeacherSearchResultsPageQuery)."""
         query_var: Dict[str, Any] = {"text": query}
         if school_id is not None:
-            query_var["schoolID"] = school_id
+            query_var["schoolID"] = _school_node_id(school_id)
 
         data = self.raw_query({
             "operationName": "TeacherSearchResultsPageQuery",
@@ -250,7 +250,7 @@ class RMPClient:
     ) -> ProfessorSearchResult:
         """List professors at a school. Wrapper around :meth:`search_professors`."""
         return self.search_professors(
-            query=query or "",
+            query=query if query else " ",
             school_id=str(school_id),
             page_size=page_size,
             cursor=cursor,
@@ -351,9 +351,12 @@ class RMPClient:
         after = first.next_cursor if first.has_next_page else None
 
         while after is not None:
-            nxt = self._fetch_professor_ratings_page(
-                professor_id, after=after, first=100, course_filter=course_filter
-            )
+            try:
+                nxt = self._fetch_professor_ratings_page(
+                    professor_id, after=after, first=100, course_filter=course_filter
+                )
+            except (RMPAPIError, HttpError, RetryError):
+                break
             all_ratings.extend(nxt.ratings)
             after = nxt.next_cursor if nxt.has_next_page else None
 
@@ -459,7 +462,10 @@ class RMPClient:
         after = first.next_cursor if first.has_next_page else None
 
         while after is not None:
-            nxt = self._fetch_school_ratings_page(school_id, after=after, first=100)
+            try:
+                nxt = self._fetch_school_ratings_page(school_id, after=after, first=100)
+            except (RMPAPIError, HttpError, RetryError):
+                break
             all_ratings.extend(nxt.ratings)
             after = nxt.next_cursor if nxt.has_next_page else None
 

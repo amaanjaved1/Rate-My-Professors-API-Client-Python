@@ -4,17 +4,17 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ratemyprofessors-client"
-version = "0.1.0"
-description = "A Python API Client for RateMyProfessors."
+version = "2.0.0"
+description = "Typed, retrying, rate-limited unofficial Python client for the RateMyProfessors GraphQL API."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [
   { name = "Amaan", email = "amaanjaved2004@gmail.com" },
 ]
-keywords = ["ratemyprofessors", "api-client", "scraping", "ratings"]
+keywords = ["ratemyprofessors", "api-client", "graphql", "ratings"]
 classifiers = [
-  "Development Status :: 4 - Beta",
+  "Development Status :: 5 - Production/Stable",
   "Intended Audience :: Developers",
   "License :: OSI Approved :: MIT License",
   "Programming Language :: Python :: 3",
@@ -42,7 +42,8 @@ dev = [
 ]
 
 [project.urls]
-Repository = "https://github.com/amaanjaved1/Rate-My-Professors-API-Client-Python"
+Repository = "https://github.com/amaanjaved1/Rate-My-Professors-API-Client"
+Documentation = "https://amaanjaved1.github.io/Rate-My-Professors-API-Client/"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/rmp_client"]
