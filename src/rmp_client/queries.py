@@ -72,6 +72,20 @@ query SchoolRatingsListQuery($count: Int!, $id: ID!, $cursor: String) {
       city
       state
       country
+      numRatings
+      avgRatingRounded
+      summary {
+        campusCondition
+        campusLocation
+        careerOpportunities
+        clubAndEventActivities
+        foodQuality
+        internetSpeed
+        schoolReputation
+        schoolSafety
+        schoolSatisfaction
+        socialActivities
+      }
       ratings(first: $count, after: $cursor) {
         edges {
           cursor
@@ -165,56 +179,3 @@ query TeacherSearchResultsPageQuery($query: TeacherSearchQuery!, $count: Int!, $
 }
 """
 
-GET_TEACHER_QUERY = """
-query GetTeacherQuery($id: ID!) {
-  node(id: $id) {
-    ... on Teacher {
-      id
-      legacyId
-      firstName
-      lastName
-      department
-      avgRating
-      avgDifficulty
-      numRatings
-      wouldTakeAgainPercent
-      school {
-        id
-        legacyId
-        name
-        city
-        state
-      }
-    }
-  }
-}
-"""
-
-GET_SCHOOL_QUERY = """
-query GetSchoolQuery($id: ID!) {
-  node(id: $id) {
-    ... on School {
-      id
-      legacyId
-      name
-      city
-      state
-      country
-      numRatings
-      avgRatingRounded
-      summary {
-        campusCondition
-        campusLocation
-        careerOpportunities
-        clubAndEventActivities
-        foodQuality
-        internetSpeed
-        schoolReputation
-        schoolSafety
-        schoolSatisfaction
-        socialActivities
-      }
-    }
-  }
-}
-"""

@@ -27,8 +27,6 @@ from .models import (
     SchoolSearchResult,
 )
 from .queries import (
-    GET_SCHOOL_QUERY,
-    GET_TEACHER_QUERY,
     RATINGS_LIST_QUERY,
     SCHOOL_RATINGS_LIST_QUERY,
     SCHOOL_SEARCH_RESULTS_QUERY,
@@ -285,20 +283,13 @@ class RMPClient:
     # ---- Professor details + ratings ---------------------------------------------
 
     def get_professor(self, professor_id: str) -> Professor:
-        """Fetch a single professor by legacy numeric ID (GetTeacherQuery)."""
-        node_id = _teacher_node_id(professor_id)
-        data = self.raw_query({
-            "operationName": "GetTeacherQuery",
-            "query": GET_TEACHER_QUERY,
-            "variables": {"id": node_id},
-        })
+        """Fetch a single professor by legacy numeric ID.
 
-        node = (data.get("data") or {}).get("node")
-        if not node:
-            raise ParsingError(
-                f"Teacher not found in GraphQL response for id={professor_id}"
-            )
-        return self._parse_professor_node(node)
+        Uses the ratings list query with a minimal page size to retrieve
+        full teacher details in a single request.
+        """
+        page = self._fetch_professor_ratings_page(professor_id, first=1)
+        return page.professor
 
     def get_professor_ratings_page(
         self,
@@ -399,20 +390,13 @@ class RMPClient:
     # ---- School details + ratings ------------------------------------------------
 
     def get_school(self, school_id: str) -> School:
-        """Fetch a single school by legacy numeric ID (GetSchoolQuery)."""
-        node_id = _school_node_id(school_id)
-        data = self.raw_query({
-            "operationName": "GetSchoolQuery",
-            "query": GET_SCHOOL_QUERY,
-            "variables": {"id": node_id},
-        })
+        """Fetch a single school by legacy numeric ID.
 
-        node = (data.get("data") or {}).get("node")
-        if not node:
-            raise ParsingError(
-                f"School not found in GraphQL response for id={school_id}"
-            )
-        return self._parse_school_node(node)
+        Uses the school ratings list query with a minimal page size to retrieve
+        full school details (including category summaries) in a single request.
+        """
+        page = self._fetch_school_ratings_page(school_id, first=1)
+        return page.school
 
     def get_compare_schools(
         self, school_id_1: str, school_id_2: str
@@ -596,13 +580,7 @@ class RMPClient:
                 "GraphQL response missing data.node (school not found or invalid id)"
             )
 
-        school = self._parse_school_node({
-            "id": node.get("legacyId") or node.get("id") or school_id,
-            "name": node.get("name"),
-            "city": node.get("city"),
-            "state": node.get("state"),
-            "country": node.get("country"),
-        })
+        school = self._parse_school_node(node)
 
         ratings_conn = node.get("ratings") or {}
         edges = ratings_conn.get("edges") or []

@@ -388,13 +388,12 @@ class TestIterProfessorsForSchool:
 
 class TestRawQuery:
     def test_sends_query_and_gets_response(self, client: RMPClient) -> None:
-        from rmp_client.queries import GET_SCHOOL_QUERY
         import base64
 
         node_id = base64.b64encode(f"School-{SCHOOL_QUEENS}".encode()).decode()
         result = client.raw_query({
             "operationName": "GetSchoolQuery",
-            "query": GET_SCHOOL_QUERY,
+            "query": "query GetSchoolQuery($id: ID!) { node(id: $id) { ... on School { id legacyId name } } }",
             "variables": {"id": node_id},
         })
         assert "data" in result
