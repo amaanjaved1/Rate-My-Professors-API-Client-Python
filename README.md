@@ -1,8 +1,10 @@
 # RateMyProfessors API Client (Python)
 
+[![PyPI](https://img.shields.io/pypi/v/ratemyprofessors-client?color=10b981)](https://pypi.org/project/ratemyprofessors-client/) [![downloads](https://img.shields.io/pepy/dt/ratemyprofessors-client)](https://pypi.org/project/ratemyprofessors-client/) [![docs](https://img.shields.io/badge/docs-website-10b981)](https://amaanjaved1.github.io/Rate-My-Professors-API-Client/)
+
 A typed, retrying, rate-limited **unofficial** client for [RateMyProfessors](https://www.ratemyprofessors.com).
 
-> **Disclaimer:** This library is unofficial and may break if RMP changes their internal API. Use responsibly and respect rate limits.
+> **Looking for TypeScript?** Check out the [TypeScript version](https://github.com/amaanjaved1/rate-my-professors-client-ts).
 
 ## Requirements
 
