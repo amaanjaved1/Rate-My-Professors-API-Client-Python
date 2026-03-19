@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>API Reference &mdash; RMP Client</title>
+  <link rel="stylesheet" href="style.css" />
+  <link id="hljs-theme" rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11/build/styles/github-dark.min.css" />
+  <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11/build/highlight.min.js"></script>
+  <script>
+    (function(){var t=localStorage.getItem('rmp-docs-theme');var d=t==='dark'||(!t&&window.matchMedia('(prefers-color-scheme:dark)').matches);if(d)document.documentElement.classList.add('dark')})();
+  </script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-right">
+      <a href="https://github.com/amaanjaved1/Rate-My-Professors-API-Client" class="topbar-btn" target="_blank" rel="noopener" aria-label="GitHub">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
+      </a>
+      <button class="topbar-btn" id="theme-toggle" aria-label="Toggle theme"></button>
+    </div>
+  </header>
+
+  <aside class="sidebar">
+    <div class="sidebar-brand">RMP API Docs</div>
+    <nav><ul>
+      <li><a href="index.html">Home</a></li>
+      <li><a href="usage.html">Usage</a></li>
+      <li><a href="reference.html" class="active">API Reference</a></li>
+      <li><a href="configuration.html">Configuration</a></li>
+      <li><a href="extras.html">Extras</a></li>
+    </ul></nav>
+  </aside>
+
+  <main class="content">
+    <h1>API Reference</h1>
+    <p>The main entry point is <code>RMPClient</code>. Use as a context manager or call <code>close()</code> when done.</p>
+    <pre><code class="language-python">from rmp_client import RMPClient, RMPClientConfig
+
+with RMPClient(config=RMPClientConfig()) as client:
+    ...</code></pre>
+
+    <h2 id="school-methods">School Methods <a href="#school-methods" class="anchor">#</a></h2>
+    <table>
+      <tr><th>Method</th><th>Returns</th><th>Description</th></tr>
+      <tr><td><code>search_schools(query, *, page_size=20, cursor=None)</code></td><td><code>SchoolSearchResult</code></td><td>Search schools by name</td></tr>
+      <tr><td><code>get_school(school_id)</code></td><td><code>School</code></td><td>Fetch a single school with category ratings</td></tr>
+      <tr><td><code>get_compare_schools(school_id_1, school_id_2)</code></td><td><code>CompareSchoolsResult</code></td><td>Fetch two schools side by side</td></tr>
+      <tr><td><code>get_school_ratings_page(school_id, *, cursor=None, page_size=20)</code></td><td><code>SchoolRatingsPage</code></td><td>Get one page of school ratings (cached)</td></tr>
+      <tr><td><code>iter_school_ratings(school_id, *, page_size=20, since=None)</code></td><td><code>Iterator[SchoolRating]</code></td><td>Iterate all school ratings</td></tr>
+    </table>
+
+    <h2 id="professor-methods">Professor Methods <a href="#professor-methods" class="anchor">#</a></h2>
+    <table>
+      <tr><th>Method</th><th>Returns</th><th>Description</th></tr>
+      <tr><td><code>search_professors(query, *, school_id=None, page_size=20, cursor=None)</code></td><td><code>ProfessorSearchResult</code></td><td>Search professors by name</td></tr>
+      <tr><td><code>list_professors_for_school(school_id, *, query=None, page_size=20, cursor=None)</code></td><td><code>ProfessorSearchResult</code></td><td>List professors at a school</td></tr>
+      <tr><td><code>iter_professors_for_school(school_id, *, query=None, page_size=20)</code></td><td><code>Iterator[Professor]</code></td><td>Iterate all professors at a school</td></tr>
+      <tr><td><code>get_professor(professor_id)</code></td><td><code>Professor</code></td><td>Fetch a single professor</td></tr>
+      <tr><td><code>get_professor_ratings_page(professor_id, *, cursor=None, page_size=20, course_filter=None)</code></td><td><code>ProfessorRatingsPage</code></td><td>Get one page of professor ratings (cached)</td></tr>
+      <tr><td><code>iter_professor_ratings(professor_id, *, page_size=20, since=None, course_filter=None)</code></td><td><code>Iterator[Rating]</code></td><td>Iterate all professor ratings</td></tr>
+    </table>
+
+    <h2 id="low-level">Low-level <a href="#low-level" class="anchor">#</a></h2>
+    <table>
+      <tr><th>Method</th><th>Returns</th><th>Description</th></tr>
+      <tr><td><code>raw_query(payload)</code></td><td><code>dict</code></td><td>Send a raw GraphQL payload</td></tr>
+      <tr><td><code>close()</code></td><td><code>None</code></td><td>Close the HTTP client and clear caches</td></tr>
+    </table>
+
+    <hr />
+
+    <h2 id="models">Models <a href="#models" class="anchor">#</a></h2>
+    <p>All models are Pydantic <code>BaseModel</code> subclasses.</p>
+
+    <h3 id="School">School</h3>
+    <p><code>id</code>, <code>name</code>, <code>location</code>, <code>overall_quality</code>, <code>num_ratings</code>, <code>reputation</code>, <code>safety</code>, <code>happiness</code>, <code>facilities</code>, <code>social</code>, <code>location_rating</code>, <code>clubs</code>, <code>opportunities</code>, <code>internet</code>, <code>food</code></p>
+
+    <h3 id="Professor">Professor</h3>
+    <p><code>id</code>, <code>name</code>, <code>department</code>, <code>school</code> (School), <code>url</code>, <code>overall_rating</code>, <code>num_ratings</code>, <code>percent_take_again</code>, <code>level_of_difficulty</code>, <code>tags</code>, <code>rating_distribution</code></p>
+
+    <h3 id="Rating">Rating</h3>
+    <p><code>date</code>, <code>comment</code>, <code>quality</code>, <code>difficulty</code>, <code>tags</code>, <code>course_raw</code>, <code>details</code>, <code>thumbs_up</code>, <code>thumbs_down</code></p>
+
+    <h3 id="SchoolRating">SchoolRating</h3>
+    <p><code>date</code>, <code>comment</code>, <code>overall</code>, <code>category_ratings</code> (dict), <code>thumbs_up</code>, <code>thumbs_down</code></p>
+
+    <h3 id="ProfessorSearchResult">ProfessorSearchResult / SchoolSearchResult</h3>
+    <p><code>professors</code>/<code>schools</code>, <code>total</code>, <code>page_size</code>, <code>has_next_page</code>, <code>next_cursor</code></p>
+
+    <h3 id="ProfessorRatingsPage">ProfessorRatingsPage / SchoolRatingsPage</h3>
+    <p><code>professor</code>/<code>school</code>, <code>ratings</code>, <code>has_next_page</code>, <code>next_cursor</code></p>
+
+    <h3 id="CompareSchoolsResult">CompareSchoolsResult</h3>
+    <p><code>school_1</code>, <code>school_2</code></p>
+
+    <hr />
+
+    <h2 id="errors">Errors <a href="#errors" class="anchor">#</a></h2>
+    <p>All errors extend <code>RMPError</code>.</p>
+    <table>
+      <tr><th>Error</th><th>Description</th></tr>
+      <tr><td><code>HttpError</code></td><td>Non-2xx HTTP response. Has <code>status_code</code>, <code>url</code>, <code>body</code>.</td></tr>
+      <tr><td><code>ParsingError</code></td><td>Could not parse the GraphQL response.</td></tr>
+      <tr><td><code>RateLimitError</code></td><td>Local rate limiter blocked the request.</td></tr>
+      <tr><td><code>RetryError</code></td><td>All retry attempts exhausted.</td></tr>
+      <tr><td><code>RMPAPIError</code></td><td>GraphQL API returned an <code>errors</code> array.</td></tr>
+      <tr><td><code>ConfigurationError</code></td><td>Invalid client configuration.</td></tr>
+    </table>
+    <pre><code class="language-python">from rmp_client import RMPClient, HttpError, ParsingError
+
+with RMPClient() as client:
+    try:
+        prof = client.get_professor("999999")
+    except ParsingError:
+        print("Professor not found")
+    except HttpError as e:
+        print(f"HTTP {e.status_code}")</code></pre>
+  </main>
+
+  <aside class="toc"><div class="toc-title">On this page</div><ul id="toc-list"></ul></aside>
+  <script src="script.js"></script>
+</body>
+</html>

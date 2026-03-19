@@ -1,8 +1,10 @@
 # RateMyProfessors API Client (Python)
 
+[![PyPI](https://img.shields.io/pypi/v/ratemyprofessors-client?color=10b981)](https://pypi.org/project/ratemyprofessors-client/) [![downloads](https://img.shields.io/pepy/dt/ratemyprofessors-client)](https://pypi.org/project/ratemyprofessors-client/) [![docs](https://img.shields.io/badge/docs-website-10b981)](https://amaanjaved1.github.io/Rate-My-Professors-API-Client/)
+
 A typed, retrying, rate-limited **unofficial** client for [RateMyProfessors](https://www.ratemyprofessors.com).
 
-> **Disclaimer:** This library is unofficial and may break if RMP changes their internal API. Use responsibly and respect rate limits.
+> **Looking for TypeScript?** Check out the [TypeScript version](https://github.com/amaanjaved1/rate-my-professors-client-ts).
 
 ## Requirements
 
@@ -114,8 +116,8 @@ from rmp_client import (
 )
 ```
 
-- `normalize_comment(text)` — Normalize text for deduplication (lowercase, collapse whitespace)
-- `is_valid_comment(text, min_len=10)` — Check if a comment is non-empty and meets a minimum length
+- `normalize_comment(text, *, strip_html=True, strip_punctuation=False)` — Normalize text for deduplication (trim, strip HTML, lowercase, collapse whitespace; optionally strip punctuation)
+- `is_valid_comment(text, *, min_len=10)` — Validate a comment and return a `ValidationResult` with diagnostics (empty, too short, all caps, excessive repeats, no alpha)
 - `clean_course_label(raw)` — Clean scraped course labels (remove counts, normalize whitespace)
 - `build_course_mapping(scraped, valid)` — Map scraped labels to known course codes
 - `analyze_sentiment(text)` — Compute sentiment label from text (uses TextBlob)

@@ -15,6 +15,8 @@ from .rate_limit import TokenBucket
 from .extras import (
     SentimentResult,
     analyze_sentiment,
+    CommentIssue,
+    ValidationResult,
     is_valid_comment,
     normalize_comment,
     build_course_mapping,
@@ -34,6 +36,8 @@ __all__ = [
     "TokenBucket",
     "SentimentResult",
     "analyze_sentiment",
+    "CommentIssue",
+    "ValidationResult",
     "is_valid_comment",
     "normalize_comment",
     "build_course_mapping",
