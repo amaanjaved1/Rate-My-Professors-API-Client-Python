@@ -5,19 +5,31 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Usage &mdash; RMP Client</title>
   <link rel="stylesheet" href="style.css" />
+  <link id="hljs-theme" rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11/build/styles/github-dark.min.css" />
+  <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11/build/highlight.min.js"></script>
+  <script>
+    (function(){var t=localStorage.getItem('rmp-docs-theme');var d=t==='dark'||(!t&&window.matchMedia('(prefers-color-scheme:dark)').matches);if(d)document.documentElement.classList.add('dark')})();
+  </script>
 </head>
 <body>
+  <header class="topbar">
+    <div class="topbar-right">
+      <a href="https://github.com/amaanjaved1/Rate-My-Professors-API-Client" class="topbar-btn" target="_blank" rel="noopener" aria-label="GitHub">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
+      </a>
+      <button class="topbar-btn" id="theme-toggle" aria-label="Toggle theme"></button>
+    </div>
+  </header>
+
   <aside class="sidebar">
-    <div class="sidebar-brand"><span class="dot"></span>RMP Client</div>
-    <nav>
-      <ul>
-        <li><a href="index.html">Home</a></li>
-        <li><a href="usage.html" class="active">Usage</a></li>
-        <li><a href="reference.html">API Reference</a></li>
-        <li><a href="configuration.html">Configuration</a></li>
-        <li><a href="extras.html">Extras</a></li>
-      </ul>
-    </nav>
+    <div class="sidebar-brand">RMP API Docs</div>
+    <nav><ul>
+      <li><a href="index.html">Home</a></li>
+      <li><a href="usage.html" class="active">Usage</a></li>
+      <li><a href="reference.html">API Reference</a></li>
+      <li><a href="configuration.html">Configuration</a></li>
+      <li><a href="extras.html">Extras</a></li>
+    </ul></nav>
   </aside>
 
   <main class="content">
@@ -25,92 +37,89 @@
     <p>All examples use the <code>RMPClient</code> context manager, which handles connection setup and teardown.</p>
 
     <h2 id="search-schools">Search Schools <a href="#search-schools" class="anchor">#</a></h2>
-    <pre><code>from rmp_client import RMPClient
+    <pre><code class="language-python">from rmp_client import RMPClient
 
 with RMPClient() as client:
     result = client.search_schools("queens")
     for school in result.schools:
         print(school.name, school.location, school.overall_quality)
 
-    # Cursor pagination
     if result.has_next_page:
         page2 = client.search_schools("queens", cursor=result.next_cursor)</code></pre>
 
     <h2 id="get-school">Get a School by ID <a href="#get-school" class="anchor">#</a></h2>
-    <pre><code>with RMPClient() as client:
+    <pre><code class="language-python">with RMPClient() as client:
     school = client.get_school("1466")
     print(school.name, school.location, school.overall_quality)
     print(f"Reputation: {school.reputation}, Safety: {school.safety}")</code></pre>
 
     <h2 id="compare-schools">Compare Two Schools <a href="#compare-schools" class="anchor">#</a></h2>
-    <pre><code>with RMPClient() as client:
+    <pre><code class="language-python">with RMPClient() as client:
     result = client.get_compare_schools("1466", "1491")
     print(result.school_1.name, "vs", result.school_2.name)</code></pre>
 
     <h2 id="search-professors">Search Professors <a href="#search-professors" class="anchor">#</a></h2>
-    <pre><code>with RMPClient() as client:
+    <pre><code class="language-python">with RMPClient() as client:
     result = client.search_professors("Smith")
     for prof in result.professors:
         print(prof.name, prof.overall_rating, prof.school.name if prof.school else "")
 
-    # Filter by school
     result = client.search_professors("Smith", school_id="1530")</code></pre>
 
     <h2 id="list-professors">List Professors at a School <a href="#list-professors" class="anchor">#</a></h2>
-    <pre><code>with RMPClient() as client:
+    <pre><code class="language-python">with RMPClient() as client:
     result = client.list_professors_for_school(1466, page_size=20)
     for prof in result.professors:
         print(prof.name, prof.department)</code></pre>
 
     <h2 id="iterate-professors">Iterate All Professors at a School <a href="#iterate-professors" class="anchor">#</a></h2>
-    <pre><code>with RMPClient() as client:
+    <pre><code class="language-python">with RMPClient() as client:
     for prof in client.iter_professors_for_school(1466, page_size=50):
         print(prof.name, prof.num_ratings)</code></pre>
 
     <h2 id="get-professor">Get a Professor by ID <a href="#get-professor" class="anchor">#</a></h2>
-    <pre><code>with RMPClient() as client:
+    <pre><code class="language-python">with RMPClient() as client:
     prof = client.get_professor("2823076")
     print(prof.name, prof.department, prof.overall_rating)
     print(f"Difficulty: {prof.level_of_difficulty}")
     print(f"Would take again: {prof.percent_take_again}%")</code></pre>
 
-    <h2 id="professor-ratings">Fetch Professor Ratings (Paginated, Cached) <a href="#professor-ratings" class="anchor">#</a></h2>
-    <pre><code>with RMPClient() as client:
+    <h2 id="professor-ratings">Professor Ratings (Paginated, Cached) <a href="#professor-ratings" class="anchor">#</a></h2>
+    <pre><code class="language-python">with RMPClient() as client:
     page = client.get_professor_ratings_page("2823076", page_size=10)
     print(f"Professor: {page.professor.name}")
     for rating in page.ratings:
         print(rating.date, rating.quality, rating.comment[:50])
 
-    # Load more (served from cache, no extra network request)
     if page.has_next_page:
         page2 = client.get_professor_ratings_page("2823076", cursor=page.next_cursor)</code></pre>
 
     <h2 id="iterate-professor-ratings">Iterate All Professor Ratings <a href="#iterate-professor-ratings" class="anchor">#</a></h2>
-    <pre><code>from datetime import date
+    <pre><code class="language-python">from datetime import date
 from rmp_client import RMPClient
 
 with RMPClient() as client:
     for rating in client.iter_professor_ratings("2823076", since=date(2024, 1, 1)):
         print(rating.date, rating.quality, rating.comment)</code></pre>
 
-    <h2 id="school-ratings">Fetch School Ratings (Paginated, Cached) <a href="#school-ratings" class="anchor">#</a></h2>
-    <pre><code>with RMPClient() as client:
+    <h2 id="school-ratings">School Ratings (Paginated, Cached) <a href="#school-ratings" class="anchor">#</a></h2>
+    <pre><code class="language-python">with RMPClient() as client:
     page = client.get_school_ratings_page("1466", page_size=10)
     for rating in page.ratings:
         print(rating.date, rating.overall, rating.category_ratings)</code></pre>
 
     <h2 id="iterate-school-ratings">Iterate All School Ratings <a href="#iterate-school-ratings" class="anchor">#</a></h2>
-    <pre><code>with RMPClient() as client:
+    <pre><code class="language-python">with RMPClient() as client:
     for rating in client.iter_school_ratings("1466"):
         print(rating.date, rating.overall, rating.comment[:50])</code></pre>
 
-    <h2 id="raw-query">Send a Raw GraphQL Query <a href="#raw-query" class="anchor">#</a></h2>
-    <pre><code>with RMPClient() as client:
-    data = client.raw_query({
-        "query": "query { viewer { id } }",
-        "variables": {},
-    })
+    <h2 id="raw-query">Raw GraphQL Query <a href="#raw-query" class="anchor">#</a></h2>
+    <pre><code class="language-python">with RMPClient() as client:
+    data = client.raw_query({"query": "query { viewer { id } }", "variables": {}})
     print(data)</code></pre>
   </main>
+
+  <aside class="toc"><div class="toc-title">On this page</div><ul id="toc-list"></ul></aside>
+  <script src="script.js"></script>
 </body>
 </html>

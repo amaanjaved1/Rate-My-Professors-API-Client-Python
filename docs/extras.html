@@ -5,47 +5,57 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Extras &mdash; RMP Client</title>
   <link rel="stylesheet" href="style.css" />
+  <link id="hljs-theme" rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11/build/styles/github-dark.min.css" />
+  <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11/build/highlight.min.js"></script>
+  <script>
+    (function(){var t=localStorage.getItem('rmp-docs-theme');var d=t==='dark'||(!t&&window.matchMedia('(prefers-color-scheme:dark)').matches);if(d)document.documentElement.classList.add('dark')})();
+  </script>
 </head>
 <body>
+  <header class="topbar">
+    <div class="topbar-right">
+      <a href="https://github.com/amaanjaved1/Rate-My-Professors-API-Client" class="topbar-btn" target="_blank" rel="noopener" aria-label="GitHub">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
+      </a>
+      <button class="topbar-btn" id="theme-toggle" aria-label="Toggle theme"></button>
+    </div>
+  </header>
+
   <aside class="sidebar">
-    <div class="sidebar-brand"><span class="dot"></span>RMP Client</div>
-    <nav>
-      <ul>
-        <li><a href="index.html">Home</a></li>
-        <li><a href="usage.html">Usage</a></li>
-        <li><a href="reference.html">API Reference</a></li>
-        <li><a href="configuration.html">Configuration</a></li>
-        <li><a href="extras.html" class="active">Extras</a></li>
-      </ul>
-    </nav>
+    <div class="sidebar-brand">RMP API Docs</div>
+    <nav><ul>
+      <li><a href="index.html">Home</a></li>
+      <li><a href="usage.html">Usage</a></li>
+      <li><a href="reference.html">API Reference</a></li>
+      <li><a href="configuration.html">Configuration</a></li>
+      <li><a href="extras.html" class="active">Extras</a></li>
+    </ul></nav>
   </aside>
 
   <main class="content">
     <h1>Extras</h1>
     <p>Helpers for ingestion pipelines. Import them from <code>rmp_client</code>:</p>
-    <pre><code>from rmp_client import (
-    analyze_sentiment,
-    normalize_comment,
-    is_valid_comment,
-    build_course_mapping,
+    <pre><code class="language-python">from rmp_client import (
+    analyze_sentiment, normalize_comment,
+    is_valid_comment, build_course_mapping,
     clean_course_label,
 )</code></pre>
 
     <h2 id="sentiment">Sentiment <a href="#sentiment" class="anchor">#</a></h2>
     <p>Compute a sentiment score and label from comment text (uses TextBlob internally).</p>
-    <pre><code>result = analyze_sentiment("Great prof, explains concepts clearly.")
+    <pre><code class="language-python">result = analyze_sentiment("Great prof, explains concepts clearly.")
 print(result.score, result.label)  # e.g. 0.65 "positive"</code></pre>
 
     <h2 id="dedupe-helpers">Dedupe Helpers <a href="#dedupe-helpers" class="anchor">#</a></h2>
     <p>Normalize comments for deduplication and filter out low-quality entries.</p>
-    <pre><code>raw = "  This prof is AMAZING!!!  "
+    <pre><code class="language-python">raw = "  This prof is AMAZING!!!  "
 normalized = normalize_comment(raw)  # "this prof is amazing!!!"
 if is_valid_comment(normalized, min_len=10):
     print("Valid comment")</code></pre>
 
     <h2 id="course-code-helpers">Course Code Helpers <a href="#course-code-helpers" class="anchor">#</a></h2>
     <p>Map scraped RMP course labels to your course catalog.</p>
-    <pre><code>scraped = ["ANAT 215 (12)", "phys115"]
+    <pre><code class="language-python">scraped = ["ANAT 215 (12)", "phys115"]
 valid = ["ANAT 215", "PHYS 115"]
 
 mapping = build_course_mapping(scraped, valid)
@@ -54,5 +64,8 @@ mapping = build_course_mapping(scraped, valid)
 cleaned = clean_course_label("MATH 101 (5)")
 # "MATH 101"</code></pre>
   </main>
+
+  <aside class="toc"><div class="toc-title">On this page</div><ul id="toc-list"></ul></aside>
+  <script src="script.js"></script>
 </body>
 </html>
