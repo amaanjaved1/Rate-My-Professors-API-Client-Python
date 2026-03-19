@@ -81,6 +81,7 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           repository-url: https://test.pypi.org/legacy/
+          skip-existing: true
 
   publish-to-pypi:
     name: Publish to PyPI
@@ -101,3 +102,5 @@ jobs:
           path: dist/
       - name: Publish distribution to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          skip-existing: true
