@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Configuration &mdash; RMP Client</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="sidebar-brand"><span class="dot"></span>RMP Client</div>
+    <nav>
+      <ul>
+        <li><a href="index.html">Home</a></li>
+        <li><a href="usage.html">Usage</a></li>
+        <li><a href="reference.html">API Reference</a></li>
+        <li><a href="configuration.html" class="active">Configuration</a></li>
+        <li><a href="extras.html">Extras</a></li>
+      </ul>
+    </nav>
+  </aside>
+
+  <main class="content">
+    <h1>Configuration</h1>
+    <p>The client is configured via <code>RMPClientConfig</code>. All fields have sensible defaults.</p>
+
+    <pre><code>from rmp_client import RMPClientConfig, RMPClient
+
+config = RMPClientConfig(
+    base_url="https://www.ratemyprofessors.com/graphql",
+    timeout_seconds=10.0,
+    max_retries=3,
+    rate_limit_per_minute=60,
+)
+
+with RMPClient(config) as client:
+    ...</code></pre>
+
+    <h2 id="available-options">Available Options <a href="#available-options" class="anchor">#</a></h2>
+    <table>
+      <tr><th>Option</th><th>Type</th><th>Default</th><th>Description</th></tr>
+      <tr><td><code>base_url</code></td><td><code>str</code></td><td><code>https://www.ratemyprofessors.com/graphql</code></td><td>GraphQL endpoint URL</td></tr>
+      <tr><td><code>timeout_seconds</code></td><td><code>float</code></td><td><code>10.0</code></td><td>HTTP request timeout</td></tr>
+      <tr><td><code>max_retries</code></td><td><code>int</code></td><td><code>3</code></td><td>Number of retry attempts for failed requests</td></tr>
+      <tr><td><code>rate_limit_per_minute</code></td><td><code>int</code></td><td><code>60</code></td><td>Max requests per minute (token bucket)</td></tr>
+      <tr><td><code>user_agent</code></td><td><code>str</code></td><td>Firefox UA</td><td>User-Agent header sent with every request</td></tr>
+      <tr><td><code>default_headers</code></td><td><code>Mapping[str, str]</code></td><td>UA + Accept-Language</td><td>Default headers for all requests</td></tr>
+    </table>
+
+    <h2 id="rate-limiting">Rate Limiting <a href="#rate-limiting" class="anchor">#</a></h2>
+    <p>
+      The client uses a token-bucket algorithm. Tokens replenish continuously at
+      <code>rate_limit_per_minute / 60</code> tokens per second. Each request consumes one token.
+      If no tokens are available, the request blocks until one becomes available.
+    </p>
+    <pre><code>config = RMPClientConfig(rate_limit_per_minute=30)  # half the default rate</code></pre>
+
+    <h2 id="retries">Retries <a href="#retries" class="anchor">#</a></h2>
+    <p>
+      On 5xx errors or network failures, the client retries up to <code>max_retries</code> times.
+      4xx errors are <strong>not</strong> retried. After exhausting retries, a <code>RetryError</code>
+      is raised containing the last underlying exception.
+    </p>
+    <pre><code>config = RMPClientConfig(max_retries=5)  # more retries for flaky networks</code></pre>
+
+    <h2 id="timeouts">Timeouts <a href="#timeouts" class="anchor">#</a></h2>
+    <p>The <code>timeout_seconds</code> value applies to each individual HTTP request (connect + read).</p>
+    <pre><code>config = RMPClientConfig(timeout_seconds=30.0)  # generous timeout</code></pre>
+  </main>
+</body>
+</html>

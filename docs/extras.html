@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Extras &mdash; RMP Client</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="sidebar-brand"><span class="dot"></span>RMP Client</div>
+    <nav>
+      <ul>
+        <li><a href="index.html">Home</a></li>
+        <li><a href="usage.html">Usage</a></li>
+        <li><a href="reference.html">API Reference</a></li>
+        <li><a href="configuration.html">Configuration</a></li>
+        <li><a href="extras.html" class="active">Extras</a></li>
+      </ul>
+    </nav>
+  </aside>
+
+  <main class="content">
+    <h1>Extras</h1>
+    <p>Helpers for ingestion pipelines. Import them from <code>rmp_client</code>:</p>
+    <pre><code>from rmp_client import (
+    analyze_sentiment,
+    normalize_comment,
+    is_valid_comment,
+    build_course_mapping,
+    clean_course_label,
+)</code></pre>
+
+    <h2 id="sentiment">Sentiment <a href="#sentiment" class="anchor">#</a></h2>
+    <p>Compute a sentiment score and label from comment text (uses TextBlob internally).</p>
+    <pre><code>result = analyze_sentiment("Great prof, explains concepts clearly.")
+print(result.score, result.label)  # e.g. 0.65 "positive"</code></pre>
+
+    <h2 id="dedupe-helpers">Dedupe Helpers <a href="#dedupe-helpers" class="anchor">#</a></h2>
+    <p>Normalize comments for deduplication and filter out low-quality entries.</p>
+    <pre><code>raw = "  This prof is AMAZING!!!  "
+normalized = normalize_comment(raw)  # "this prof is amazing!!!"
+if is_valid_comment(normalized, min_len=10):
+    print("Valid comment")</code></pre>
+
+    <h2 id="course-code-helpers">Course Code Helpers <a href="#course-code-helpers" class="anchor">#</a></h2>
+    <p>Map scraped RMP course labels to your course catalog.</p>
+    <pre><code>scraped = ["ANAT 215 (12)", "phys115"]
+valid = ["ANAT 215", "PHYS 115"]
+
+mapping = build_course_mapping(scraped, valid)
+# {"ANAT 215 (12)": "ANAT 215", "phys115": "PHYS 115"}
+
+cleaned = clean_course_label("MATH 101 (5)")
+# "MATH 101"</code></pre>
+  </main>
+</body>
+</html>

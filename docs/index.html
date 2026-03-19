@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RateMyProfessors API Client (Python)</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="sidebar-brand"><span class="dot"></span>RMP Client</div>
+    <nav>
+      <ul>
+        <li><a href="index.html" class="active">Home</a></li>
+        <li><a href="usage.html">Usage</a></li>
+        <li><a href="reference.html">API Reference</a></li>
+        <li><a href="configuration.html">Configuration</a></li>
+        <li><a href="extras.html">Extras</a></li>
+      </ul>
+    </nav>
+  </aside>
+
+  <main class="content">
+    <h1>RateMyProfessors API Client</h1>
+    <p>
+      An unofficial, typed Python client for <a href="https://www.ratemyprofessors.com">RateMyProfessors</a>.
+      All data is fetched via RMP's GraphQL API &mdash; no HTML scraping or browser automation required.
+    </p>
+
+    <div class="callout">
+      <strong>Disclaimer:</strong> This library is unofficial and may break if RMP changes their
+      internal API. Use responsibly and respect rate limits.
+    </div>
+
+    <h2 id="features">Features <a href="#features" class="anchor">#</a></h2>
+    <ul>
+      <li>Strong typing via Pydantic models</li>
+      <li>Automatic retries with configurable max attempts</li>
+      <li>Token-bucket rate limiting (default 60 req/min)</li>
+      <li>In-memory caching for ratings pages (pre-fetches all ratings on first load)</li>
+      <li>Cursor-based pagination for all list/search endpoints</li>
+      <li>Clear error hierarchy for precise exception handling</li>
+      <li>Built-in helpers for ingestion workflows (sentiment, dedupe, course codes)</li>
+    </ul>
+
+    <h2 id="requirements">Requirements <a href="#requirements" class="anchor">#</a></h2>
+    <ul>
+      <li><strong>Python 3.10</strong> or later</li>
+      <li>Works with type checkers (Pydantic models, fully typed API)</li>
+    </ul>
+
+    <h2 id="installation">Installation <a href="#installation" class="anchor">#</a></h2>
+    <pre><code>pip install ratemyprofessors-client</code></pre>
+
+    <h2 id="quick-start">Quick Start <a href="#quick-start" class="anchor">#</a></h2>
+    <pre><code>from rmp_client import RMPClient
+
+with RMPClient() as client:
+    prof = client.get_professor("2823076")
+    print(prof.name, prof.overall_rating)
+
+    for rating in client.iter_professor_ratings(prof.id):
+        print(rating.date, rating.quality, rating.comment)</code></pre>
+
+    <h2 id="documentation">Documentation <a href="#documentation" class="anchor">#</a></h2>
+    <ul>
+      <li><a href="usage.html">Usage</a> &mdash; Quickstart examples for every endpoint</li>
+      <li><a href="configuration.html">Configuration</a> &mdash; Tuning retries, rate limits, timeouts, and headers</li>
+      <li><a href="reference.html">API Reference</a> &mdash; Full method and type reference</li>
+      <li><a href="extras.html">Extras</a> &mdash; Ingestion helpers (sentiment, dedupe, course mapping)</li>
+    </ul>
+  </main>
+</body>
+</html>
