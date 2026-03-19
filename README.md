@@ -116,8 +116,8 @@ from rmp_client import (
 )
 ```
 
-- `normalize_comment(text)` — Normalize text for deduplication (lowercase, collapse whitespace)
-- `is_valid_comment(text, min_len=10)` — Check if a comment is non-empty and meets a minimum length
+- `normalize_comment(text, *, strip_html=True, strip_punctuation=False)` — Normalize text for deduplication (trim, strip HTML, lowercase, collapse whitespace; optionally strip punctuation)
+- `is_valid_comment(text, *, min_len=10)` — Validate a comment and return a `ValidationResult` with diagnostics (empty, too short, all caps, excessive repeats, no alpha)
 - `clean_course_label(raw)` — Clean scraped course labels (remove counts, normalize whitespace)
 - `build_course_mapping(scraped, valid)` — Map scraped labels to known course codes
 - `analyze_sentiment(text)` — Compute sentiment label from text (uses TextBlob)

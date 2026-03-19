@@ -46,12 +46,42 @@
     <pre><code class="language-python">result = analyze_sentiment("Great prof, explains concepts clearly.")
 print(result.score, result.label)  # e.g. 0.65 "positive"</code></pre>
 
-    <h2 id="dedupe-helpers">Dedupe Helpers <a href="#dedupe-helpers" class="anchor">#</a></h2>
-    <p>Normalize comments for deduplication and filter out low-quality entries.</p>
-    <pre><code class="language-python">raw = "  This prof is AMAZING!!!  "
-normalized = normalize_comment(raw)  # "this prof is amazing!!!"
-if is_valid_comment(normalized, min_len=10):
-    print("Valid comment")</code></pre>
+    <h2 id="helpers">Helpers <a href="#helpers" class="anchor">#</a></h2>
+
+    <h3 id="normalize_comment">normalize_comment</h3>
+    <div class="method-sig">normalize_comment(text: str, *, strip_html: bool = True, strip_punctuation: bool = False) -&gt; str</div>
+    <p>Normalizes a comment for comparison or deduplication. Trims whitespace, strips HTML tags (opt-out), lowercases, and collapses runs of whitespace. Optionally strips punctuation for looser matching.</p>
+    <table>
+      <tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr>
+      <tr><td><code>text</code></td><td><code>str</code></td><td>&mdash;</td><td>Comment text</td></tr>
+      <tr><td><code>strip_html</code></td><td><code>bool</code></td><td><code>True</code></td><td>Remove HTML tags</td></tr>
+      <tr><td><code>strip_punctuation</code></td><td><code>bool</code></td><td><code>False</code></td><td>Remove all punctuation</td></tr>
+    </table>
+    <pre><code class="language-python">a = normalize_comment("  Great  Professor!  ")
+b = normalize_comment("great professor!")
+assert a == b  # True
+
+normalize_comment("&lt;b&gt;Loved&lt;/b&gt; this class")  # "loved this class"
+normalize_comment("Hello, world!", strip_punctuation=True)  # "hello world"</code></pre>
+
+    <h3 id="is_valid_comment">is_valid_comment</h3>
+    <div class="method-sig">is_valid_comment(text: str, *, min_len: int = 10) -&gt; ValidationResult</div>
+    <p>Validates a comment and returns detailed diagnostics. Checks for empty text, insufficient length, all-caps, excessive repeated characters, and absence of alphabetic characters.</p>
+    <table>
+      <tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr>
+      <tr><td><code>text</code></td><td><code>str</code></td><td>&mdash;</td><td>Comment text</td></tr>
+      <tr><td><code>min_len</code></td><td><code>int</code></td><td><code>10</code></td><td>Minimum character length</td></tr>
+    </table>
+    <p><strong>Returns:</strong> <code>ValidationResult</code> with <code>valid</code> (bool) and <code>issues</code> (list of <code>CommentIssue</code>).</p>
+    <p>Each issue has a <code>code</code> (<code>"empty"</code>, <code>"too_short"</code>, <code>"all_caps"</code>, <code>"excessive_repeats"</code>, <code>"no_alpha"</code>) and a human-readable <code>message</code>.</p>
+    <pre><code class="language-python">result = is_valid_comment("Good")
+# ValidationResult(valid=False, issues=[CommentIssue(code="too_short", ...)])
+
+result = is_valid_comment("Great class, learned a lot")
+# ValidationResult(valid=True, issues=[])
+
+result = is_valid_comment("WORST PROF EVER!!!")
+# ValidationResult(valid=False, issues=[CommentIssue(code="all_caps", ...)])</code></pre>
 
     <h2 id="course-code-helpers">Course Code Helpers <a href="#course-code-helpers" class="anchor">#</a></h2>
     <p>Map scraped RMP course labels to your course catalog.</p>
