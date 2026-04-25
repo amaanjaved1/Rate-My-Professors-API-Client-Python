@@ -32,7 +32,6 @@ class RMPClientConfig:
     base_url: str = DEFAULT_BASE_URL
     timeout_seconds: float = 10.0
     max_retries: int = 3
-    rate_limit_per_minute: int = 60
     user_agent: str = DEFAULT_USER_AGENT
     default_headers: Mapping[str, str] = field(
         default_factory=lambda: dict(DEFAULT_HEADERS)

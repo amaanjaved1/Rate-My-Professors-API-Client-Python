@@ -4,8 +4,6 @@ import threading
 import time
 from dataclasses import dataclass
 
-from .errors import RateLimitError
-
 
 @dataclass
 class TokenBucket:
@@ -23,20 +21,14 @@ class TokenBucket:
         self._last_refill = now
         self._tokens = min(self.capacity, self._tokens + elapsed * self.refill_per_second)
 
-    def consume(self, amount: float = 1.0, *, block: bool = True) -> None:
-        """Consume tokens from the bucket.
-
-        If block=False and there are insufficient tokens, raises RateLimitError.
-        """
+    def consume(self, amount: float = 1.0) -> None:
+        """Consume tokens from the bucket, blocking until available."""
         with self._lock:
             while True:
                 self._refill()
                 if self._tokens >= amount:
                     self._tokens -= amount
                     return
-                if not block:
-                    raise RateLimitError("Local rate limit exceeded")
-                # Sleep just enough to gain one token
                 needed = amount - self._tokens
                 sleep_for = max(needed / self.refill_per_second, 0.01)
                 time.sleep(sleep_for)

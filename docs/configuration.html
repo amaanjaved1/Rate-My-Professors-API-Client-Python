@@ -71,7 +71,6 @@ config = RMPClientConfig(
     base_url="https://www.ratemyprofessors.com/graphql",
     timeout_seconds=10.0,
     max_retries=3,
-    rate_limit_per_minute=60,
 )
 with RMPClient(config) as client:
     ...</code></pre>
@@ -105,12 +104,6 @@ with RMPClient(config) as client:
           <td>Number of retry attempts for failed requests</td>
         </tr>
         <tr>
-          <td><code>rate_limit_per_minute</code></td>
-          <td><code>int</code></td>
-          <td><code>60</code></td>
-          <td>Max requests per minute (token bucket)</td>
-        </tr>
-        <tr>
           <td><code>user_agent</code></td>
           <td><code>str</code></td>
           <td>Firefox UA</td>
@@ -128,19 +121,46 @@ with RMPClient(config) as client:
         Rate Limiting <a href="#rate-limiting" class="anchor">#</a>
       </h2>
       <p>
-        The client uses a token-bucket algorithm. Tokens replenish continuously.
-        Each request consumes one token. If no tokens are available, the request
-        blocks until one becomes available.
+        The client uses a token-bucket algorithm fixed at <strong>60 requests per
+        minute</strong>. Tokens replenish continuously at 1 per second. Each
+        request consumes one token; if none are available the request blocks
+        until one becomes available. This limit is not configurable.
       </p>
-      <pre><code class="language-python">config = RMPClientConfig(rate_limit_per_minute=30)</code></pre>
 
       <h2 id="retries">Retries <a href="#retries" class="anchor">#</a></h2>
       <p>
         On 5xx errors or network failures, the client retries up to
         <code>max_retries</code> times. 4xx errors are
         <strong>not</strong> retried. After exhausting retries, a
-        <code>RetryError</code> is raised.
+        <code>RetryError</code> is raised. Each retry attempt consumes a token
+        from the rate limiter before firing.
       </p>
+      <table>
+        <tr>
+          <th>Situation</th>
+          <th>Retried?</th>
+        </tr>
+        <tr>
+          <td>Network error (timeout, connection reset)</td>
+          <td>Yes</td>
+        </tr>
+        <tr>
+          <td>5xx server error</td>
+          <td>Yes</td>
+        </tr>
+        <tr>
+          <td>4xx client error (400, 401, 403, 404)</td>
+          <td>No &mdash; raises <code>HttpError</code> immediately</td>
+        </tr>
+        <tr>
+          <td>429 Too Many Requests</td>
+          <td>Yes &mdash; exponential back-off, up to <code>max_retries</code> times</td>
+        </tr>
+        <tr>
+          <td>GraphQL <code>errors</code> in a 200 response</td>
+          <td>No &mdash; raises <code>RMPAPIError</code> immediately</td>
+        </tr>
+      </table>
       <pre><code class="language-python">config = RMPClientConfig(max_retries=5)</code></pre>
 
       <h2 id="timeouts">Timeouts <a href="#timeouts" class="anchor">#</a></h2>

@@ -47,7 +47,6 @@ class Professor(BaseModel):
     name: str
     department: Optional[str] = None
     school: Optional[School] = None
-    url: Optional[str] = None
     overall_rating: Optional[float] = None
     num_ratings: Optional[int] = None
     percent_take_again: Optional[float] = None

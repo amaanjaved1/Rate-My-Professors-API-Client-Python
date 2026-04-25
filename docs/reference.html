@@ -47,7 +47,7 @@ with RMPClient(config=RMPClientConfig()) as client:
       <tr><td><code>search_schools(query, *, page_size=20, cursor=None)</code></td><td><code>SchoolSearchResult</code></td><td>Search schools by name</td></tr>
       <tr><td><code>get_school(school_id)</code></td><td><code>School</code></td><td>Fetch a single school with category ratings</td></tr>
       <tr><td><code>get_compare_schools(school_id_1, school_id_2)</code></td><td><code>CompareSchoolsResult</code></td><td>Fetch two schools side by side</td></tr>
-      <tr><td><code>get_school_ratings_page(school_id, *, cursor=None, page_size=20)</code></td><td><code>SchoolRatingsPage</code></td><td>Get one page of school ratings (cached)</td></tr>
+      <tr><td><code>get_school_ratings_page(school_id, *, cursor=None, page_size=20)</code></td><td><code>SchoolRatingsPage</code></td><td>Get one page of school ratings</td></tr>
       <tr><td><code>iter_school_ratings(school_id, *, page_size=20, since=None)</code></td><td><code>Iterator[SchoolRating]</code></td><td>Iterate all school ratings</td></tr>
     </table>
 
@@ -58,7 +58,7 @@ with RMPClient(config=RMPClientConfig()) as client:
       <tr><td><code>list_professors_for_school(school_id, *, query=None, page_size=20, cursor=None)</code></td><td><code>ProfessorSearchResult</code></td><td>List professors at a school</td></tr>
       <tr><td><code>iter_professors_for_school(school_id, *, query=None, page_size=20)</code></td><td><code>Iterator[Professor]</code></td><td>Iterate all professors at a school</td></tr>
       <tr><td><code>get_professor(professor_id)</code></td><td><code>Professor</code></td><td>Fetch a single professor</td></tr>
-      <tr><td><code>get_professor_ratings_page(professor_id, *, cursor=None, page_size=20, course_filter=None)</code></td><td><code>ProfessorRatingsPage</code></td><td>Get one page of professor ratings (cached)</td></tr>
+      <tr><td><code>get_professor_ratings_page(professor_id, *, cursor=None, page_size=20, course_filter=None)</code></td><td><code>ProfessorRatingsPage</code></td><td>Get one page of professor ratings</td></tr>
       <tr><td><code>iter_professor_ratings(professor_id, *, page_size=20, since=None, course_filter=None)</code></td><td><code>Iterator[Rating]</code></td><td>Iterate all professor ratings</td></tr>
     </table>
 
@@ -78,7 +78,7 @@ with RMPClient(config=RMPClientConfig()) as client:
     <p><code>id</code>, <code>name</code>, <code>location</code>, <code>overall_quality</code>, <code>num_ratings</code>, <code>reputation</code>, <code>safety</code>, <code>happiness</code>, <code>facilities</code>, <code>social</code>, <code>location_rating</code>, <code>clubs</code>, <code>opportunities</code>, <code>internet</code>, <code>food</code></p>
 
     <h3 id="Professor">Professor</h3>
-    <p><code>id</code>, <code>name</code>, <code>department</code>, <code>school</code> (School), <code>url</code>, <code>overall_rating</code>, <code>num_ratings</code>, <code>percent_take_again</code>, <code>level_of_difficulty</code>, <code>tags</code>, <code>rating_distribution</code></p>
+    <p><code>id</code>, <code>name</code>, <code>department</code>, <code>school</code> (School), <code>overall_rating</code>, <code>num_ratings</code>, <code>percent_take_again</code>, <code>level_of_difficulty</code>, <code>tags</code>, <code>rating_distribution</code></p>
 
     <h3 id="Rating">Rating</h3>
     <p><code>date</code>, <code>comment</code>, <code>quality</code>, <code>difficulty</code>, <code>tags</code>, <code>course_raw</code>, <code>details</code>, <code>thumbs_up</code>, <code>thumbs_down</code></p>
@@ -103,7 +103,6 @@ with RMPClient(config=RMPClientConfig()) as client:
       <tr><th>Error</th><th>Description</th></tr>
       <tr><td><code>HttpError</code></td><td>Non-2xx HTTP response. Has <code>status_code</code>, <code>url</code>, <code>body</code>.</td></tr>
       <tr><td><code>ParsingError</code></td><td>Could not parse the GraphQL response.</td></tr>
-      <tr><td><code>RateLimitError</code></td><td>Local rate limiter blocked the request.</td></tr>
       <tr><td><code>RetryError</code></td><td>All retry attempts exhausted.</td></tr>
       <tr><td><code>RMPAPIError</code></td><td>GraphQL API returned an <code>errors</code> array.</td></tr>
       <tr><td><code>ConfigurationError</code></td><td>Invalid client configuration.</td></tr>

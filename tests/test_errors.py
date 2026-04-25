@@ -10,7 +10,6 @@ from rmp_client.errors import (
     ParsingError,
     RMPAPIError,
     RMPError,
-    RateLimitError,
     RetryError,
 )
 
@@ -36,11 +35,6 @@ class TestRMPErrorHierarchy:
     def test_rmp_api_error_is_rmp_error(self) -> None:
         assert issubclass(RMPAPIError, RMPError)
         exc = RMPAPIError("api err", details=[])
-        assert isinstance(exc, RMPError)
-
-    def test_rate_limit_error_is_rmp_error(self) -> None:
-        assert issubclass(RateLimitError, RMPError)
-        exc = RateLimitError("limit exceeded")
         assert isinstance(exc, RMPError)
 
     def test_retry_error_is_rmp_error(self) -> None:
@@ -97,11 +91,3 @@ class TestParsingError:
     def test_message(self) -> None:
         err = ParsingError("Unexpected payload shape")
         assert "Unexpected" in str(err)
-
-
-class TestRateLimitError:
-    """RateLimitError for local rate limit."""
-
-    def test_message(self) -> None:
-        err = RateLimitError("Local rate limit exceeded")
-        assert "rate limit" in str(err).lower()

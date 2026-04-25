@@ -28,15 +28,10 @@ class TestRMPClientConfigDefaults:
         config = RMPClientConfig()
         assert config.timeout_seconds == 10.0
         assert config.max_retries == 3
-        assert config.rate_limit_per_minute == 60
 
     def test_user_agent_default(self) -> None:
         config = RMPClientConfig()
         assert config.user_agent == DEFAULT_USER_AGENT
-
-    def test_override_rate_limit(self) -> None:
-        config = RMPClientConfig(rate_limit_per_minute=30)
-        assert config.rate_limit_per_minute == 30
 
     def test_override_base_url(self) -> None:
         config = RMPClientConfig(base_url="https://custom.example.com/graphql")

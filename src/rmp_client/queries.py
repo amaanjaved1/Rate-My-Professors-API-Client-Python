@@ -30,6 +30,7 @@ fragment RatingsList_teacher_4pguUW on Teacher {
     name
     city
     state
+    country
     avgRating
     numRatings
   }

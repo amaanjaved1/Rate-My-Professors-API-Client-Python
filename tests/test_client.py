@@ -23,8 +23,7 @@ PROFESSOR_ID = "2823076"
 
 @pytest.fixture(scope="module")
 def client() -> RMPClient:
-    cfg = RMPClientConfig(rate_limit_per_minute=30)
-    c = RMPClient(config=cfg)
+    c = RMPClient()
     yield c
     c.close()
 
@@ -182,7 +181,7 @@ class TestGetCompareSchools:
 
 
 # ---------------------------------------------------------------------------
-# get_professor_ratings_page (cached pagination)
+# get_professor_ratings_page
 # ---------------------------------------------------------------------------
 
 
@@ -197,7 +196,7 @@ class TestGetProfessorRatingsPage:
             assert r.date is not None
             assert isinstance(r.comment, str)
 
-    def test_load_more_from_cache(self, client: RMPClient) -> None:
+    def test_load_more(self, client: RMPClient) -> None:
         p1 = client.get_professor_ratings_page(PROFESSOR_ID, page_size=3)
         assert p1.has_next_page is True
         assert p1.next_cursor is not None
@@ -237,7 +236,7 @@ class TestGetProfessorRatingsPage:
 
 
 # ---------------------------------------------------------------------------
-# get_school_ratings_page (cached pagination)
+# get_school_ratings_page
 # ---------------------------------------------------------------------------
 
 
@@ -257,7 +256,7 @@ class TestGetSchoolRatingsPage:
                 assert isinstance(r.category_ratings, dict)
                 assert len(r.category_ratings) > 0
 
-    def test_load_more_from_cache(self, client: RMPClient) -> None:
+    def test_load_more(self, client: RMPClient) -> None:
         p1 = client.get_school_ratings_page(SCHOOL_QUEENS, page_size=3)
         if not p1.has_next_page:
             pytest.skip("School does not have enough ratings for multi-page test")

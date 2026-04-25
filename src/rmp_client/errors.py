@@ -21,10 +21,6 @@ class HttpError(RMPError):
         super().__init__(f"HTTP {status_code} for {url}")
 
 
-class RateLimitError(RMPError):
-    """Raised when a local rate limit is exceeded."""
-
-
 class RetryError(RMPError):
     """Raised when a request ultimately fails after exhausting retries."""
 
