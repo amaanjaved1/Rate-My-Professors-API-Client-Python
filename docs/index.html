@@ -89,8 +89,7 @@
       <ul>
         <li>Strong typing via Pydantic models</li>
         <li>Automatic retries with configurable max attempts</li>
-        <li>Token-bucket rate limiting (default 60 req/min)</li>
-        <li>In-memory caching for ratings pages</li>
+        <li>Token-bucket rate limiting (fixed at 60 req/min)</li>
         <li>Cursor-based pagination for all list/search endpoints</li>
         <li>Clear error hierarchy for precise exception handling</li>
         <li>
@@ -134,7 +133,7 @@ with RMPClient() as client:
         </li>
         <li>
           <a href="configuration.html">Configuration</a> &mdash; Tuning retries,
-          rate limits, timeouts, and headers
+          timeouts, and headers
         </li>
         <li>
           <a href="reference.html">API Reference</a> &mdash; Full method and
