@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 from typing import Any, Dict, Mapping, Optional
 
 import httpx
@@ -18,10 +19,7 @@ class HttpClient:
     def __init__(self, config: RMPClientConfig) -> None:
         self._config = config
         self._client = httpx.Client(timeout=config.timeout_seconds)
-        self._bucket = TokenBucket(
-            capacity=config.rate_limit_per_minute,
-            refill_per_second=config.rate_limit_per_minute / 60.0,
-        )
+        self._bucket = TokenBucket(capacity=60, refill_per_second=1.0)
 
     def close(self) -> None:
         self._client.close()
@@ -81,6 +79,9 @@ class HttpClient:
                 response.status_code, str(response.url), body=response.text
             )
             last_exc = err
+            if response.status_code == 429 and attempt <= self._config.max_retries:
+                time.sleep(2 ** attempt)
+                continue
             if (
                 500 <= response.status_code < 600
                 and attempt <= self._config.max_retries

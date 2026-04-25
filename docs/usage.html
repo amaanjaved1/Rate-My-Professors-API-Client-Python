@@ -85,7 +85,7 @@ with RMPClient() as client:
     print(f"Difficulty: {prof.level_of_difficulty}")
     print(f"Would take again: {prof.percent_take_again}%")</code></pre>
 
-    <h2 id="professor-ratings">Professor Ratings (Paginated, Cached) <a href="#professor-ratings" class="anchor">#</a></h2>
+    <h2 id="professor-ratings">Professor Ratings (Paginated) <a href="#professor-ratings" class="anchor">#</a></h2>
     <pre><code class="language-python">with RMPClient() as client:
     page = client.get_professor_ratings_page("2823076", page_size=10)
     print(f"Professor: {page.professor.name}")
@@ -103,7 +103,7 @@ with RMPClient() as client:
     for rating in client.iter_professor_ratings("2823076", since=date(2024, 1, 1)):
         print(rating.date, rating.quality, rating.comment)</code></pre>
 
-    <h2 id="school-ratings">School Ratings (Paginated, Cached) <a href="#school-ratings" class="anchor">#</a></h2>
+    <h2 id="school-ratings">School Ratings (Paginated) <a href="#school-ratings" class="anchor">#</a></h2>
     <pre><code class="language-python">with RMPClient() as client:
     page = client.get_school_ratings_page("1466", page_size=10)
     for rating in page.ratings:

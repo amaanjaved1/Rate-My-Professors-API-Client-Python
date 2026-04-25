@@ -16,7 +16,7 @@ class TestHttpClientPostJson:
     """post_json with pytest-httpx."""
 
     def test_returns_json_on_200(self, httpx_mock: pytest_httpx.HTTPXMock) -> None:
-        config = RMPClientConfig(rate_limit_per_minute=1000)
+        config = RMPClientConfig()
         payload = {"data": {"x": 1}}
         httpx_mock.add_response(
             url=config.base_url,
@@ -32,7 +32,7 @@ class TestHttpClientPostJson:
     def test_raises_rmp_api_error_when_errors_in_body(
         self, httpx_mock: pytest_httpx.HTTPXMock
     ) -> None:
-        config = RMPClientConfig(rate_limit_per_minute=1000)
+        config = RMPClientConfig()
         body = json.dumps({"errors": [{"message": "Unauthorized"}]})
         httpx_mock.add_response(url=config.base_url, content=body.encode(), status_code=200)
         client = HttpClient(config)
@@ -44,7 +44,7 @@ class TestHttpClientPostJson:
             client.close()
 
     def test_raises_http_error_on_4xx(self, httpx_mock: pytest_httpx.HTTPXMock) -> None:
-        config = RMPClientConfig(rate_limit_per_minute=1000)
+        config = RMPClientConfig()
         httpx_mock.add_response(url=config.base_url, status_code=403, text="Forbidden")
         client = HttpClient(config)
         try:
@@ -55,7 +55,7 @@ class TestHttpClientPostJson:
             client.close()
 
     def test_retries_on_5xx(self, httpx_mock: pytest_httpx.HTTPXMock) -> None:
-        config = RMPClientConfig(max_retries=2, rate_limit_per_minute=1000)
+        config = RMPClientConfig(max_retries=2)
         httpx_mock.add_response(url=config.base_url, status_code=502)
         httpx_mock.add_response(url=config.base_url, status_code=502)
         httpx_mock.add_response(url=config.base_url, status_code=502)
@@ -69,7 +69,7 @@ class TestHttpClientPostJson:
             client.close()
 
     def test_succeeds_after_5xx_retry(self, httpx_mock: pytest_httpx.HTTPXMock) -> None:
-        config = RMPClientConfig(max_retries=3, rate_limit_per_minute=1000)
+        config = RMPClientConfig(max_retries=3)
         httpx_mock.add_response(url=config.base_url, status_code=503)
         httpx_mock.add_response(url=config.base_url, json={"data": "ok"})
         client = HttpClient(config)
@@ -79,8 +79,23 @@ class TestHttpClientPostJson:
         finally:
             client.close()
 
+    def test_retries_on_429(
+        self, httpx_mock: pytest_httpx.HTTPXMock, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("rmp_client.http.time.sleep", lambda _: None)
+        config = RMPClientConfig(max_retries=1)
+        httpx_mock.add_response(url=config.base_url, status_code=429)
+        httpx_mock.add_response(url=config.base_url, json={"data": "ok"})
+        client = HttpClient(config)
+        try:
+            result = client.post_json("", {})
+            assert result == {"data": "ok"}
+            assert len(httpx_mock.get_requests()) == 2
+        finally:
+            client.close()
+
     def test_sends_default_headers(self, httpx_mock: pytest_httpx.HTTPXMock) -> None:
-        config = RMPClientConfig(rate_limit_per_minute=1000)
+        config = RMPClientConfig()
         httpx_mock.add_response(url=config.base_url, json={"data": {}})
         client = HttpClient(config)
         try:

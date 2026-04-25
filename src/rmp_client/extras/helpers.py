@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
+import html
 import re
 from dataclasses import dataclass, field
 from typing import Literal
 
 
 def _strip_html(text: str) -> str:
-    """Strip HTML tags from text (RMP comments occasionally contain markup)."""
-    return re.sub(r"<[^>]*>", "", text)
+    """Strip HTML tags and decode HTML entities from text."""
+    return html.unescape(re.sub(r"<[^>]*>", "", text))
 
 
 def normalize_comment(

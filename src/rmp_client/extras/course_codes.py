@@ -39,7 +39,7 @@ def build_course_mapping(
 
         # try simple prefix+3-digit patterns: ANAT215 -> ANAT 215
         prefix_match = re.match(r"^[A-Z]+", key)
-        num_match = re.search(r"(\d{3})", key)
+        num_match = re.search(r"(\d{3,4})", key)
 
         candidates: Set[str] = set()
         if prefix_match and num_match:

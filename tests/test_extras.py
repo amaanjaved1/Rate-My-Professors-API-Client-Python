@@ -31,6 +31,10 @@ class TestNormalizeComment:
     def test_strips_html_by_default(self) -> None:
         assert normalize_comment("<b>Loved</b> this class") == "loved this class"
 
+    def test_decodes_html_entities(self) -> None:
+        assert normalize_comment("great &amp; easy") == "great & easy"
+        assert normalize_comment("<b>bold</b> &amp; great") == "bold & great"
+
     def test_strip_html_option(self) -> None:
         assert normalize_comment("<b>Bold</b>", strip_html=False) == "<b>bold</b>"
 
@@ -115,3 +119,10 @@ class TestBuildCourseMapping:
     def test_empty_valid(self) -> None:
         mapping = build_course_mapping(["MATH 101"], [])
         assert mapping["MATH 101"] is None
+
+    def test_four_digit_course_number_match(self) -> None:
+        valid = ["MATH 1001", "CS 1102"]
+        scraped = ["MATH1001", "CS1102"]
+        mapping = build_course_mapping(scraped, valid)
+        assert mapping["MATH1001"] == {"MATH 1001"}
+        assert mapping["CS1102"] == {"CS 1102"}

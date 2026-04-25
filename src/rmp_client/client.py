@@ -3,17 +3,18 @@
 All data is fetched via POST to https://www.ratemyprofessors.com/graphql.
 Rate limiting, retries, and timeouts are handled by :class:`HttpClient`.
 
-Call :meth:`RMPClient.close` when done to release resources and clear caches.
+Call :meth:`RMPClient.close` when done to release resources.
 """
 
 from __future__ import annotations
 
 import base64
+import warnings
 from datetime import date
-from typing import Any, Dict, Iterator, List, Mapping, Optional, Tuple
+from typing import Any, Dict, Iterator, List, Mapping, Optional
 
 from .config import RMPClientConfig
-from .errors import HttpError, ParsingError, RetryError, RMPAPIError
+from .errors import ParsingError
 from .http import HttpClient, HttpClientContext
 from .models import (
     CompareSchoolsResult,
@@ -70,10 +71,15 @@ def _safe_int(value: Any) -> Optional[int]:
         return None
 
 
+def _coalesce(*values: Any) -> Any:
+    """Return the first non-None value, or None if all are None."""
+    return next((v for v in values if v is not None), None)
+
+
 def _parse_date(date_str: Any) -> date:
     """Parse RMP date strings (e.g. '2026-03-03 21:20:35 +0000 UTC') to a date.
 
-    Uses only the date part; invalid input yields today's date.
+    Uses only the date part; invalid input warns and yields today's date.
     """
     if isinstance(date_str, str):
         part = date_str.split(" ")[0] if " " in date_str else date_str
@@ -81,6 +87,7 @@ def _parse_date(date_str: Any) -> date:
             return date.fromisoformat(part)
         except ValueError:
             pass
+    warnings.warn(f"Could not parse date {date_str!r}, using today", stacklevel=3)
     return date.today()
 
 
@@ -94,12 +101,6 @@ class RMPClient:
         self._config = config or RMPClientConfig()
         self._http_ctx = HttpClientContext(self._config)
         self._http: Optional[HttpClient] = None
-        self._professor_ratings_cache: Dict[
-            str, Tuple[Professor, List[Rating]]
-        ] = {}
-        self._school_ratings_cache: Dict[
-            str, Tuple[School, List[SchoolRating]]
-        ] = {}
 
     def __enter__(self) -> "RMPClient":
         self._http = self._http_ctx.__enter__()
@@ -108,8 +109,6 @@ class RMPClient:
     def __exit__(self, *args: Any) -> None:
         self._http_ctx.__exit__(*args)
         self._http = None
-        self._professor_ratings_cache.clear()
-        self._school_ratings_cache.clear()
 
     @property
     def _client(self) -> HttpClient:
@@ -118,12 +117,10 @@ class RMPClient:
         return self._http
 
     def close(self) -> None:
-        """Close the HTTP client and clear all rating caches. Safe to call multiple times."""
+        """Close the HTTP client. Safe to call multiple times."""
         if self._http is not None:
             self._http.close()
             self._http = None
-        self._professor_ratings_cache.clear()
-        self._school_ratings_cache.clear()
 
     # ---- Low-level ---------------------------------------------------------------
 
@@ -283,11 +280,7 @@ class RMPClient:
     # ---- Professor details + ratings ---------------------------------------------
 
     def get_professor(self, professor_id: str) -> Professor:
-        """Fetch a single professor by legacy numeric ID.
-
-        Uses the ratings list query with a minimal page size to retrieve
-        full teacher details in a single request.
-        """
+        """Fetch a single professor by legacy numeric ID."""
         page = self._fetch_professor_ratings_page(professor_id, first=1)
         return page.professor
 
@@ -299,67 +292,12 @@ class RMPClient:
         page_size: int = 20,
         course_filter: Optional[str] = None,
     ) -> ProfessorRatingsPage:
-        """Fetch one page of ratings for a professor.
-
-        On the first call all ratings are pre-fetched via GraphQL and cached
-        in memory, so subsequent "Load More" calls with a cursor are served
-        instantly with no extra network requests.
-        """
-        # Serve from cache when cursor is a numeric offset
-        if cursor is not None:
-            cached = self._professor_ratings_cache.get(professor_id)
-            if cached:
-                professor, all_ratings = cached
-                start = max(0, int(cursor))
-                page_slice = all_ratings[start : start + page_size]
-                has_next = start + page_size < len(all_ratings)
-                return ProfessorRatingsPage(
-                    professor=professor,
-                    ratings=page_slice,
-                    has_next_page=has_next,
-                    next_cursor=str(start + page_size) if has_next else None,
-                )
-
-        # Repeated first-page call: serve from cache
-        existing = self._professor_ratings_cache.get(professor_id)
-        if existing is not None and cursor is None:
-            professor, all_ratings = existing
-            page_slice = all_ratings[:page_size]
-            has_next = len(all_ratings) > page_size
-            return ProfessorRatingsPage(
-                professor=professor,
-                ratings=page_slice,
-                has_next_page=has_next,
-                next_cursor=str(page_size) if has_next else None,
-            )
-
-        # First load: fetch ALL ratings via GraphQL and cache
-        first = self._fetch_professor_ratings_page(
-            professor_id, first=100, course_filter=course_filter
-        )
-        all_ratings = list(first.ratings)
-        professor = first.professor
-        after = first.next_cursor if first.has_next_page else None
-
-        while after is not None:
-            try:
-                nxt = self._fetch_professor_ratings_page(
-                    professor_id, after=after, first=100, course_filter=course_filter
-                )
-            except (RMPAPIError, HttpError, RetryError):
-                break
-            all_ratings.extend(nxt.ratings)
-            after = nxt.next_cursor if nxt.has_next_page else None
-
-        self._professor_ratings_cache[professor_id] = (professor, all_ratings)
-
-        page_slice = all_ratings[:page_size]
-        has_next = len(all_ratings) > page_size
-        return ProfessorRatingsPage(
-            professor=professor,
-            ratings=page_slice,
-            has_next_page=has_next,
-            next_cursor=str(page_size) if has_next else None,
+        """Fetch one page of ratings for a professor."""
+        return self._fetch_professor_ratings_page(
+            professor_id,
+            after=cursor,
+            first=page_size,
+            course_filter=course_filter,
         )
 
     def iter_professor_ratings(
@@ -370,7 +308,11 @@ class RMPClient:
         since: Optional[date] = None,
         course_filter: Optional[str] = None,
     ) -> Iterator[Rating]:
-        """Iterate all ratings for a professor. Optional ``since`` stops early."""
+        """Iterate all ratings for a professor.
+
+        ``since`` stops iteration early; assumes the API returns ratings
+        newest-first, which is the observed behaviour.
+        """
         cursor: Optional[str] = None
         while True:
             page = self.get_professor_ratings_page(
@@ -390,11 +332,7 @@ class RMPClient:
     # ---- School details + ratings ------------------------------------------------
 
     def get_school(self, school_id: str) -> School:
-        """Fetch a single school by legacy numeric ID.
-
-        Uses the school ratings list query with a minimal page size to retrieve
-        full school details (including category summaries) in a single request.
-        """
+        """Fetch a single school by legacy numeric ID."""
         page = self._fetch_school_ratings_page(school_id, first=1)
         return page.school
 
@@ -413,56 +351,8 @@ class RMPClient:
         cursor: Optional[str] = None,
         page_size: int = 20,
     ) -> SchoolRatingsPage:
-        """Fetch one page of school ratings. Same caching pattern as professor ratings."""
-        if cursor is not None:
-            cached = self._school_ratings_cache.get(school_id)
-            if cached:
-                school, all_ratings = cached
-                start = max(0, int(cursor))
-                page_slice = all_ratings[start : start + page_size]
-                has_next = start + page_size < len(all_ratings)
-                return SchoolRatingsPage(
-                    school=school,
-                    ratings=page_slice,
-                    has_next_page=has_next,
-                    next_cursor=str(start + page_size) if has_next else None,
-                )
-
-        existing = self._school_ratings_cache.get(school_id)
-        if existing is not None and cursor is None:
-            school, all_ratings = existing
-            page_slice = all_ratings[:page_size]
-            has_next = len(all_ratings) > page_size
-            return SchoolRatingsPage(
-                school=school,
-                ratings=page_slice,
-                has_next_page=has_next,
-                next_cursor=str(page_size) if has_next else None,
-            )
-
-        first = self._fetch_school_ratings_page(school_id, first=100)
-        all_ratings = list(first.ratings)
-        school = first.school
-        after = first.next_cursor if first.has_next_page else None
-
-        while after is not None:
-            try:
-                nxt = self._fetch_school_ratings_page(school_id, after=after, first=100)
-            except (RMPAPIError, HttpError, RetryError):
-                break
-            all_ratings.extend(nxt.ratings)
-            after = nxt.next_cursor if nxt.has_next_page else None
-
-        self._school_ratings_cache[school_id] = (school, all_ratings)
-
-        page_slice = all_ratings[:page_size]
-        has_next = len(all_ratings) > page_size
-        return SchoolRatingsPage(
-            school=school,
-            ratings=page_slice,
-            has_next_page=has_next,
-            next_cursor=str(page_size) if has_next else None,
-        )
+        """Fetch one page of school ratings."""
+        return self._fetch_school_ratings_page(school_id, after=cursor, first=page_size)
 
     def iter_school_ratings(
         self,
@@ -471,7 +361,11 @@ class RMPClient:
         page_size: int = 20,
         since: Optional[date] = None,
     ) -> Iterator[SchoolRating]:
-        """Iterate all ratings for a school. Optional ``since`` stops early."""
+        """Iterate all ratings for a school.
+
+        ``since`` stops iteration early; assumes the API returns ratings
+        newest-first, which is the observed behaviour.
+        """
         cursor: Optional[str] = None
         while True:
             page = self.get_school_ratings_page(
@@ -530,10 +424,10 @@ class RMPClient:
             name=name or "Unknown",
             department=node.get("department"),
             school=school,
-            overall_rating=_safe_float(node.get("avgRating")),
+            overall_rating=_safe_float(_coalesce(node.get("avgRating"), node.get("overallRating"))),
             num_ratings=_safe_int(node.get("numRatings")),
-            percent_take_again=_safe_float(node.get("wouldTakeAgainPercent")),
-            level_of_difficulty=_safe_float(node.get("avgDifficulty")),
+            percent_take_again=_safe_float(_coalesce(node.get("wouldTakeAgainPercent"), node.get("percentTakeAgain"))),
+            level_of_difficulty=_safe_float(_coalesce(node.get("avgDifficulty"), node.get("levelOfDifficulty"))),
         )
 
         ratings_conn = node.get("ratings") or {}
@@ -623,16 +517,15 @@ class RMPClient:
             name=name,
             department=node.get("department"),
             school=school,
-            url=node.get("url"),
             overall_rating=_safe_float(
-                node.get("avgRating") or node.get("overallRating")
+                _coalesce(node.get("avgRating"), node.get("overallRating"))
             ),
             num_ratings=_safe_int(node.get("numRatings")),
             percent_take_again=_safe_float(
-                node.get("wouldTakeAgainPercent") or node.get("percentTakeAgain")
+                _coalesce(node.get("wouldTakeAgainPercent"), node.get("percentTakeAgain"))
             ),
             level_of_difficulty=_safe_float(
-                node.get("avgDifficulty") or node.get("levelOfDifficulty")
+                _coalesce(node.get("avgDifficulty"), node.get("levelOfDifficulty"))
             ),
             tags=[],
             rating_distribution=None,
@@ -661,7 +554,7 @@ class RMPClient:
             date=_parse_date(record.get("date")),
             comment=str(record.get("comment") or ""),
             quality=_safe_float(
-                record.get("clarityRating") or record.get("helpfulRating")
+                _coalesce(record.get("clarityRating"), record.get("helpfulRating"))
             ),
             difficulty=_safe_float(record.get("difficultyRating")),
             tags=tags,
@@ -674,44 +567,21 @@ class RMPClient:
     def _parse_school_node(self, node: Mapping[str, Any]) -> School:
         summary = node.get("summary") if isinstance(node.get("summary"), dict) else None
         return School(
-            id=str(node.get("legacyId") or node.get("id") or ""),
+            id=str(_coalesce(node.get("legacyId"), node.get("id")) or ""),
             name=str(node.get("name") or ""),
             location=_format_location(node),
-            overall_quality=_safe_float(
-                node.get("avgRatingRounded") or node.get("avgRating")
-            ),
+            overall_quality=_safe_float(_coalesce(node.get("avgRatingRounded"), node.get("avgRating"))),
             num_ratings=_safe_int(node.get("numRatings")),
-            reputation=_safe_float(
-                (summary or {}).get("schoolReputation") or node.get("reputation")
-            ),
-            safety=_safe_float(
-                (summary or {}).get("schoolSafety") or node.get("safety")
-            ),
-            happiness=_safe_float(
-                (summary or {}).get("schoolSatisfaction") or node.get("happiness")
-            ),
-            facilities=_safe_float(
-                (summary or {}).get("campusCondition") or node.get("facilities")
-            ),
-            social=_safe_float(
-                (summary or {}).get("socialActivities") or node.get("social")
-            ),
-            location_rating=_safe_float(
-                (summary or {}).get("campusLocation") or node.get("location_rating")
-            ),
-            clubs=_safe_float(
-                (summary or {}).get("clubAndEventActivities") or node.get("clubs")
-            ),
-            opportunities=_safe_float(
-                (summary or {}).get("careerOpportunities")
-                or node.get("opportunities")
-            ),
-            internet=_safe_float(
-                (summary or {}).get("internetSpeed") or node.get("internet")
-            ),
-            food=_safe_float(
-                (summary or {}).get("foodQuality") or node.get("food")
-            ),
+            reputation=_safe_float(_coalesce((summary or {}).get("schoolReputation"), node.get("reputation"))),
+            safety=_safe_float(_coalesce((summary or {}).get("schoolSafety"), node.get("safety"))),
+            happiness=_safe_float(_coalesce((summary or {}).get("schoolSatisfaction"), node.get("happiness"))),
+            facilities=_safe_float(_coalesce((summary or {}).get("campusCondition"), node.get("facilities"))),
+            social=_safe_float(_coalesce((summary or {}).get("socialActivities"), node.get("social"))),
+            location_rating=_safe_float(_coalesce((summary or {}).get("campusLocation"), node.get("location_rating"))),
+            clubs=_safe_float(_coalesce((summary or {}).get("clubAndEventActivities"), node.get("clubs"))),
+            opportunities=_safe_float(_coalesce((summary or {}).get("careerOpportunities"), node.get("opportunities"))),
+            internet=_safe_float(_coalesce((summary or {}).get("internetSpeed"), node.get("internet"))),
+            food=_safe_float(_coalesce((summary or {}).get("foodQuality"), node.get("food"))),
         )
 
     def _parse_school_rating_node(self, record: Mapping[str, Any]) -> SchoolRating:
